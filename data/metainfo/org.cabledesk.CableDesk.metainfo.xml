@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.cabledesk.CableDesk</id>
+  <name>CableDesk</name>
+  <summary>Direct wired desktop connection over USB4 or Thunderbolt</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+
+  <description>
+    <p>
+      CableDesk connects two Linux computers over a direct USB4 or
+      Thunderbolt cable and provides an ultra-low-latency, near-local
+      desktop-control experience. It is an automation and integration layer
+      around Sunshine and Moonlight, not a replacement for either.
+    </p>
+    <p>
+      CableDesk is an experimental project. An ordinary USB-C cable and port
+      do not guarantee compatibility: both computers need genuine USB4 or
+      Thunderbolt support. See the project README for current limitations.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">org.cabledesk.CableDesk.desktop</launchable>
+
+  <url type="homepage">https://github.com/cabledesk/cabledesk</url>
+  <url type="bugtracker">https://github.com/cabledesk/cabledesk/issues</url>
+  <url type="vcs-browser">https://github.com/cabledesk/cabledesk</url>
+
+  <content_rating type="oars-1.1"/>
+
+  <releases>
+    <release version="0.1.0" date="2026-07-22">
+      <description>
+        <p>
+          Initial experimental foundation: read-only compatibility detection
+          for Fedora Workstation. No pairing, networking or streaming yet.
+        </p>
+      </description>
+    </release>
+  </releases>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+
+  <categories>
+    <category>Network</category>
+    <category>RemoteAccess</category>
+  </categories>
+</component>

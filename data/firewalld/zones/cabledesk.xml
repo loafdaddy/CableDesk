@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Dedicated firewalld zone for the CableDesk direct-link interface.
+
+  Shipped with no interfaces bound: cabledesk-helper binds the specific
+  direct-link interface (whatever it is actually named — never hardcoded,
+  see docs/NETWORKING.md) into this zone at runtime, after the interface is
+  confirmed to be the direct USB4/Thunderbolt link and not an ordinary LAN
+  interface. This file is not wired up by cabledesk-helper yet
+  (install_firewall_policy is unimplemented in this milestone) — see
+  crates/cabledesk-platform-fedora.
+
+  Intentionally minimal: mDNS for direct-link discovery only. No SSH, no
+  general LAN services. Sunshine/Moonlight ports are added once the
+  managed streaming runtime is packaged (Phase 4, docs/ROADMAP.md) — do not
+  open them speculatively.
+-->
+<zone>
+  <short>CableDesk direct link</short>
+  <description>
+    Dedicated zone for the CableDesk USB4/Thunderbolt direct-link
+    interface. Traffic here is scoped to the paired peer only; this zone
+    must never become the interface backing the default route.
+  </description>
+  <service name="mdns"/>
+</zone>

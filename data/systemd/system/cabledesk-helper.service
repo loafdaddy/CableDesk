@@ -1,0 +1,36 @@
+[Unit]
+Description=CableDesk privileged system helper
+Documentation=https://github.com/cabledesk/cabledesk
+After=dbus.service NetworkManager.service
+Wants=NetworkManager.service
+
+[Service]
+Type=dbus
+BusName=org.cabledesk.Helper1
+ExecStart=/usr/libexec/cabledesk-helper
+Restart=on-failure
+RestartSec=2
+
+# This milestone implements no privileged actions (see
+# crates/cabledesk-helper), so the bounding set below is deliberately
+# empty. Phase 2 (thunderbolt-net module loading, NetworkManager profile
+# management) will need to add exactly the capabilities each new action
+# requires — CAP_SYS_MODULE and CAP_NET_ADMIN are the expected additions —
+# not a broad grant. PrivateNetwork stays off because this service's whole
+# job is configuring a real network interface (see docs/PACKAGING.md,
+# "Security-Relevant Packaging & Hardening Research").
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_NETLINK AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

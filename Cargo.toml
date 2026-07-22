@@ -1,0 +1,54 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/cabledesk-core",
+    "crates/cabledesk-platform",
+    "crates/cabledesk-platform-fedora",
+    "crates/cabledesk-network",
+    "crates/cabledesk-discovery",
+    "crates/cabledesk-pairing",
+    "crates/cabledesk-streaming",
+    "crates/cabledesk-power",
+    "crates/cabledesk-diagnostics",
+    "crates/cabledesk-agent",
+    "crates/cabledesk-helper",
+    "crates/cabledeskctl",
+    "crates/cabledesk-ui",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-or-later"
+authors = ["CableDesk contributors"]
+repository = "https://github.com/cabledesk/cabledesk"
+rust-version = "1.82"
+
+[workspace.dependencies]
+cabledesk-core = { path = "crates/cabledesk-core" }
+cabledesk-platform = { path = "crates/cabledesk-platform" }
+cabledesk-platform-fedora = { path = "crates/cabledesk-platform-fedora" }
+cabledesk-network = { path = "crates/cabledesk-network" }
+cabledesk-discovery = { path = "crates/cabledesk-discovery" }
+cabledesk-pairing = { path = "crates/cabledesk-pairing" }
+cabledesk-streaming = { path = "crates/cabledesk-streaming" }
+cabledesk-power = { path = "crates/cabledesk-power" }
+cabledesk-diagnostics = { path = "crates/cabledesk-diagnostics" }
+
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "fs", "process", "time", "sync"] }
+async-trait = "0.1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-journald = "0.3"
+zbus = { version = "5", default-features = false, features = ["tokio"] }
+clap = { version = "4", features = ["derive"] }
+gtk4 = { version = "0.11", package = "gtk4" }
+libadwaita = { version = "0.9", features = ["v1_5"] }
+async-channel = "2"
+
+[profile.release]
+lto = true
+strip = true

@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!--
+  Placeholder Polkit actions for cabledesk-helper.
+
+  None of these are wired up to an implemented D-Bus method yet — see
+  org.cabledesk.Helper1.xml, where the corresponding methods are commented
+  out pending Phase 2/3 (docs/ROADMAP.md). They are defined here now so the
+  action IDs are stable and reviewable from the start, per docs/SECURITY.md
+  ("Polkit interaction must be triggered by a clear user action").
+
+  `auth_admin_keep` is a starting-point default, not a final decision: it
+  means a user is prompted for an administrator password once per session
+  and it is cached briefly. Whether these specific actions warrant
+  `auth_self_keep` (the *user's own* password, appropriate since CableDesk
+  is a single-user workstation feature, not a multi-user admin operation)
+  should be revisited in docs/SECURITY.md before Phase 2 ships — see
+  docs/OPEN_QUESTIONS.md.
+-->
+<policyconfig>
+  <vendor>CableDesk</vendor>
+  <vendor_url>https://github.com/cabledesk/cabledesk</vendor_url>
+
+  <action id="org.cabledesk.helper.load-thunderbolt-module">
+    <description>Load the thunderbolt-net kernel module</description>
+    <message>Authentication is required to enable direct USB4/Thunderbolt networking</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <action id="org.cabledesk.helper.prepare-direct-link">
+    <description>Create or repair the CableDesk direct-link network profile</description>
+    <message>Authentication is required to configure the direct cable connection</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <action id="org.cabledesk.helper.install-firewall-policy">
+    <description>Install the CableDesk firewall policy for the direct-link interface</description>
+    <message>Authentication is required to configure firewall rules for the direct cable connection</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <action id="org.cabledesk.helper.repair-network-profile">
+    <description>Recreate the CableDesk network profile</description>
+    <message>Authentication is required to repair the CableDesk network configuration</message>
+    <defaults>
+      <allow_any>no</allow_any>
+      <allow_inactive>no</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

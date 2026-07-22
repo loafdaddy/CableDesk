@@ -1,0 +1,29 @@
+[Unit]
+Description=CableDesk user-session agent
+Documentation=https://github.com/cabledesk/cabledesk
+# The agent needs a graphical session to matter (no point running before
+# login) but does not itself draw anything.
+PartOf=graphical-session.target
+
+[Service]
+Type=dbus
+BusName=org.cabledesk.Agent1
+ExecStart=/usr/bin/cabledesk-agent
+Restart=on-failure
+RestartSec=2
+
+# Hardening. The agent runs as the logged-in user and never as root; it
+# still doesn't need most of the filesystem or extra privileges.
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+
+[Install]
+WantedBy=graphical-session.target

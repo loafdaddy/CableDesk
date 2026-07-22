@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=CableDesk
+Comment=Ultra-low-latency wired desktop connection over USB4/Thunderbolt
+Exec=cabledesk
+Icon=org.cabledesk.CableDesk
+Terminal=false
+Categories=Network;RemoteAccess;GTK;
+StartupNotify=true
+X-GNOME-UsesNotifications=true

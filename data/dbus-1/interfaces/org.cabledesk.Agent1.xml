@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  org.cabledesk.Agent1 — the CableDesk user-session agent interface.
+
+  Owned by cabledesk-agent (a systemd user-session service) on the session bus at
+  object path /org/cabledesk/Agent. This is version 1 of the interface: any
+  incompatible change must ship as org.cabledesk.Agent2 rather than break
+  this one, so older UI/CLI builds fail predictably instead of silently
+  misinterpreting a changed method.
+
+  This milestone only implements Version and GetState. Everything else
+  below is the interface CableDesk is being built toward (see
+  docs/ROADMAP.md); unimplemented methods are commented out rather than
+  declared and left to error, so introspection never advertises a call
+  that does not exist yet.
+-->
+<node name="/org/cabledesk/Agent">
+  <interface name="org.cabledesk.Agent1">
+    <!-- Agent build version, e.g. "0.1.0". -->
+    <property name="Version" type="s" access="read"/>
+
+    <!-- Current cabledesk_core::state::ConnectionState, as its Debug name
+         (e.g. "Unconfigured", "WaitingForCable", "Streaming"). -->
+    <method name="GetState">
+      <arg name="state" type="s" direction="out"/>
+    </method>
+
+    <!--
+    Planned for later phases — not implemented yet:
+
+    <method name="ListTrustedDevices">
+      <arg name="devices_json" type="s" direction="out"/>
+    </method>
+
+    <method name="Discover">
+      <arg name="timeout_ms" type="u" direction="in"/>
+    </method>
+
+    <method name="Pair">
+      <arg name="device_id" type="s" direction="in"/>
+    </method>
+
+    <method name="Connect">
+      <arg name="device_id" type="s" direction="in"/>
+    </method>
+
+    <method name="Disconnect"/>
+
+    <method name="Forget">
+      <arg name="device_id" type="s" direction="in"/>
+    </method>
+
+    <signal name="StateChanged">
+      <arg name="state" type="s"/>
+    </signal>
+    -->
+  </interface>
+</node>

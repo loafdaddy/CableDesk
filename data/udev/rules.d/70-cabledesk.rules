@@ -1,0 +1,10 @@
+# CableDesk udev rules.
+#
+# Empty for this milestone. Per docs/UPSTREAM_INTEGRATION.md, the managed
+# Sunshine runtime already ships its own udev rule granting the "uaccess"
+# tag on /dev/uinput to the active graphical session's user, which is the
+# upstream-recommended mechanism (not broad group membership — see
+# engineering rule "no world-writable /dev/uinput"). CableDesk should reuse
+# that rule rather than duplicate it; whether CableDesk still needs a rule
+# of its own (e.g. for Thunderbolt/USB4-specific device nodes) is open —
+# see docs/OPEN_QUESTIONS.md. Nothing here mutates permissions yet.

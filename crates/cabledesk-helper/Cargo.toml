@@ -1,0 +1,24 @@
+[package]
+name = "cabledesk-helper"
+description = "CableDesk privileged system helper (cabledesk-helper.service), Polkit-gated"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "cabledesk-helper"
+path = "src/main.rs"
+
+[dependencies]
+cabledesk-core.workspace = true
+cabledesk-platform.workspace = true
+cabledesk-platform-fedora.workspace = true
+tokio.workspace = true
+zbus.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-journald.workspace = true
