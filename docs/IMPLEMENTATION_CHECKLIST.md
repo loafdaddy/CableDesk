@@ -66,8 +66,17 @@ scaffolding task). See `docs/ROADMAP.md` for what comes after.
       `docs/adr/`, `docs/OPEN_QUESTIONS.md`, `docs/SECURITY.md`,
       `docs/ROADMAP.md`).
 
-## Explicitly not claimed as working
+## Explicitly not claimed as working (Phase 1 scope)
 
-Streaming, pairing, and plug-and-play behaviour are not implemented and are
-not claimed to work — this milestone is read-only compatibility detection
-only, tested on one real machine that has no Thunderbolt/USB4 hardware.
+At Phase 1 completion, streaming, pairing, and plug-and-play behaviour were
+not implemented and were not claimed to work — Phase 1 itself was read-only
+compatibility detection, tested on one real machine that has no
+Thunderbolt/USB4 hardware.
+
+**Update:** Phase 2 (automated networking — NetworkManager profile
+management, hotplug detection, mDNS discovery, route validation,
+firewalld integration) has since been completed at the software level; see
+`docs/ROADMAP.md`'s Phase 2 section for what it covers and
+`docs/OPEN_QUESTIONS.md` for what's still unverified. This file remains a
+historical record of the Phase 1 milestone specifically and is not
+updated for later phases.

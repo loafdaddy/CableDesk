@@ -2,7 +2,12 @@
 
 ## Status
 
-Accepted (design commitment; enforcement not yet implemented — Phase 2/4).
+Accepted (design commitment). The two validation primitives
+(address-assignment and route-table checks, both in `cabledesk-network`)
+are implemented and tested live as of Phase 2. Wiring them into an actual
+stream is still Phase 4 (there is no stream yet), and none of this has
+been verified against real Thunderbolt/USB4 hardware — see
+`docs/THREAT_MODEL.md` T3.
 
 ## Context
 

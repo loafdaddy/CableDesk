@@ -14,19 +14,28 @@ exactly one system (see below); everything else is a plan.
 - USB4 or Thunderbolt host-to-host networking
 - Active logged-in graphical session
 
-**Actual testing performed for this milestone:** `crates/cabledesk-platform-fedora`
-was built and its test suite run on a real Fedora Linux 44 (Workstation
-Edition) machine — GNOME/Wayland, SELinux enforcing, firewalld active,
-NetworkManager active, kernel 7.0.14. Every `CompatibilityCheck` in
-`cabledeskctl compatibility`'s output was produced by reading real sysfs/
-D-Bus state on that machine, not mocked. That machine has no Thunderbolt/
-USB4 controller, so the "no controller detected" path (`CheckStatus::
-Unsupported`) is what's actually been exercised — the "controller present"
-path has not been tested on real Thunderbolt/USB4 hardware yet. See
-`docs/TEST_PLAN.md`.
+**Actual testing performed for this milestone:** the whole workspace
+(`cabledesk-platform-fedora`, `cabledesk-network`, `cabledesk-discovery`,
+`cabledesk-agent`, `cabledeskctl`) was built and its test suite run on a
+real Fedora Linux 44 (Workstation Edition) machine — GNOME/Wayland,
+SELinux enforcing, firewalld active, NetworkManager active, kernel
+7.0.14. Every `CompatibilityCheck` in `cabledeskctl compatibility`'s
+output, the NetworkManager/Avahi/firewalld D-Bus code, and the kernel
+route lookups were exercised against that machine's real state, not
+mocked. That machine has no Thunderbolt/USB4 controller, so the "no
+controller detected" path (`CheckStatus::Unsupported`) and
+`cabledeskctl repair-network`'s "nothing to repair" path are what's
+actually been exercised — the "controller present" path, and everything
+involving a second machine, has not been tested on real Thunderbolt/USB4
+hardware yet. See `docs/TEST_PLAN.md`.
 
-Implemented so far only covers Phase 1 (read-only compatibility detection).
-Pairing, networking, and streaming are not implemented on any platform yet.
+Implemented so far covers Phase 1 (read-only compatibility detection) and
+Phase 2 (NetworkManager profile management, hotplug detection, mDNS
+discovery, route validation, firewalld integration) at the software
+level. Pairing and streaming are not implemented on any platform yet, and
+Phase 2's networking code — despite compiling and passing its own tests —
+has not been validated end-to-end on real Thunderbolt/USB4 hardware or
+between two machines. See `docs/ROADMAP.md`.
 
 ## Tier 2 — planned, not yet implemented
 

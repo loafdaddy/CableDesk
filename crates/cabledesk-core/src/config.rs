@@ -66,7 +66,7 @@ mod tests {
 
     #[test]
     fn round_trips_through_json() {
-        let config = DeviceConfig::new("Tyler's Laptop", Role::Host);
+        let config = DeviceConfig::new("Test Host", Role::Host);
         let json = config.to_json().unwrap();
         let parsed = DeviceConfig::from_json(&json).unwrap();
         assert_eq!(config, parsed);

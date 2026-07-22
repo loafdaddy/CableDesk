@@ -28,9 +28,9 @@ enum Command {
     Compatibility,
     /// Print the full sanitised diagnostics bundle.
     Diagnostics,
-    /// Print the current CableDesk agent state (not yet implemented).
+    /// Print the current CableDesk agent state.
     Status,
-    /// List detected direct-link interfaces (not yet implemented).
+    /// List detected direct-link interfaces.
     Links,
     /// Print USB-C Power Delivery and battery status.
     Power,
@@ -48,7 +48,8 @@ enum Command {
     Forget { device: String },
     /// Print recent CableDesk logs (not yet implemented).
     Logs,
-    /// Recreate the CableDesk NetworkManager profile (not yet implemented).
+    /// Recreate the CableDesk NetworkManager profile and firewalld binding
+    /// for the currently-detected direct-link interface.
     RepairNetwork,
     /// Reset CableDesk configuration to defaults (not yet implemented).
     Reset,
@@ -84,6 +85,25 @@ fn not_implemented(command: &str) {
          See docs/ROADMAP.md for the phase in which it lands."
     );
     std::process::exit(1);
+}
+
+/// Queries `cabledesk-agent`'s `GetState` over the session D-Bus — a thin
+/// client for `data/dbus-1/interfaces/org.cabledesk.Agent1.xml`, kept
+/// local to this CLI rather than a shared crate since it's the only
+/// caller so far.
+#[zbus::proxy(
+    interface = "org.cabledesk.Agent1",
+    default_service = "org.cabledesk.Agent1",
+    default_path = "/org/cabledesk/Agent"
+)]
+trait Agent1 {
+    async fn get_state(&self) -> zbus::Result<String>;
+}
+
+async fn query_agent_state() -> zbus::Result<String> {
+    let connection = zbus::Connection::session().await?;
+    let proxy = Agent1Proxy::new(&connection).await?;
+    proxy.get_state().await
 }
 
 #[tokio::main]
@@ -184,7 +204,47 @@ async fn main() -> std::process::ExitCode {
                 return std::process::ExitCode::FAILURE;
             }
         },
-        Command::Status => not_implemented("status"),
+        Command::Status => {
+            match query_agent_state().await {
+                Ok(state) => {
+                    if cli.json {
+                        println!("{}", serde_json::json!({ "state": state }));
+                    } else {
+                        println!("{state}");
+                    }
+                }
+                Err(e) => {
+                    eprintln!("Failed to reach cabledesk-agent: {e}");
+                    eprintln!("Is cabledesk-agent.service running? (systemctl --user status cabledesk-agent)");
+                    return std::process::ExitCode::FAILURE;
+                }
+            }
+        }
+        Command::RepairNetwork => {
+            match cabledesk_platform_fedora::detect_direct_link_interface_name().await {
+                Ok(Some(interface_name)) => {
+                    println!("Found direct-link interface: {interface_name}");
+                    println!(
+                        "Recreating the CableDesk NetworkManager profile and firewalld binding..."
+                    );
+                    let link = cabledesk_platform::DirectLink { interface_name };
+                    match backend.prepare_direct_link(&link).await {
+                        Ok(()) => println!("Done."),
+                        Err(e) => {
+                            eprintln!("Failed to repair the direct-link network: {e}");
+                            return std::process::ExitCode::FAILURE;
+                        }
+                    }
+                }
+                Ok(None) => {
+                    println!("No direct-link interface is currently present; nothing to repair.");
+                }
+                Err(e) => {
+                    eprintln!("Failed to detect the direct-link interface: {e}");
+                    return std::process::ExitCode::FAILURE;
+                }
+            }
+        }
         Command::Devices => not_implemented("devices"),
         Command::Discover => not_implemented("discover"),
         Command::Pair => not_implemented("pair"),
@@ -192,7 +252,6 @@ async fn main() -> std::process::ExitCode {
         Command::Disconnect => not_implemented("disconnect"),
         Command::Forget { .. } => not_implemented("forget"),
         Command::Logs => not_implemented("logs"),
-        Command::RepairNetwork => not_implemented("repair-network"),
         Command::Reset => not_implemented("reset"),
         Command::Purge => not_implemented("purge"),
     }

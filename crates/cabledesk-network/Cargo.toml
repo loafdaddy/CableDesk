@@ -10,3 +10,9 @@ rust-version.workspace = true
 
 [dependencies]
 cabledesk-core.workspace = true
+tokio.workspace = true
+zbus.workspace = true
+futures-util.workspace = true
+nix.workspace = true
+rtnetlink.workspace = true
+tracing.workspace = true

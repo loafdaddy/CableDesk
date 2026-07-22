@@ -6,7 +6,9 @@ rest is the plan those future tests need to fill in.
 
 ## Unit tests (implemented, this milestone)
 
-All in `cargo test --workspace`, 20 tests passing as of this milestone:
+All in `cargo test --workspace`, 39 tests passing as of this milestone
+(14 in `cabledesk-core`, 12 in `cabledesk-network`, 6 in
+`cabledesk-discovery`, 7 in `cabledesk-platform-fedora`):
 
 - **State transitions** (`cabledesk-core/src/state.rs`, 5 tests): starts
   `Unconfigured`; a full happy-path walk to `Streaming`; illegal jumps are
@@ -30,14 +32,88 @@ All in `cargo test --workspace`, 20 tests passing as of this milestone:
 - **Dependency path scanning** (`cabledesk-platform-fedora/src/dependencies.rs`,
   2 tests): a known-present binary (`sh`) is found; a fabricated binary
   name is not.
-- **Fedora backend integration** (`cabledesk-platform-fedora/src/lib.rs`, 2
-  tests, `#[tokio::test]`, run against the real host — not mocked):
-  `collect_diagnostics` succeeds and returns non-empty checks in every
-  category on whatever machine runs the test suite; the two mutating
-  methods (`prepare_direct_link`, `install_firewall_policy`) return an
-  explicit error rather than `Ok(())`.
+- **Fedora backend integration** (`cabledesk-platform-fedora/src/lib.rs`
+  and `src/firewall.rs`, 3 tests, `#[tokio::test]`, run against the real
+  host — not mocked): `collect_diagnostics` succeeds and returns
+  non-empty checks in every category; `install_firewall_policy` (read-only
+  — just checks the zone is loaded) reports the CableDesk zone honestly as
+  not-installed on a dev machine that hasn't run the system-level part of
+  `dev-install.sh`; `firewall::can_query_installed_zones` confirms the
+  firewalld D-Bus query itself succeeds. **`prepare_direct_link` has no
+  automated test at all** — it is real, mutating code (creates a
+  persistent NetworkManager profile, binds a firewalld zone) and this
+  workspace's test suite must never create real system state as a side
+  effect of `cargo test` — see "Live-but-safe Phase 2 tests" below for
+  what *is* exercised from that code path.
+- **`DirectLinkProfile` settings construction** (`cabledesk-network/src/
+  profile.rs`, 5 tests): the NetworkManager settings dictionary pins the
+  exact interface name given, sets `ipv4.never-default=true`, uses plain
+  `ipv4.method=link-local` (and never sets the separate `ipv4.link-local`
+  fallback property at all — see `docs/adr/ADR-003-networkmanager-dbus.md`),
+  sets `connection.autoconnect=true`, and the connection ID embeds the
+  interface name for debuggability.
+- **Interface address and route validation** (`cabledesk-network/src/
+  validate.rs`, 6 tests, real — not mocked): `127.0.0.1` is confirmed to
+  belong to `lo`; a fabricated interface name and an address `lo` doesn't
+  have are both correctly rejected; a real kernel FIB lookup (via
+  `rtnetlink`, the same `RTM_GETROUTE` mechanism `ip route get` uses)
+  confirms `127.0.0.1`'s route actually resolves via `lo`, and correctly
+  rejects a fabricated interface name.
+- **`_cabledesk._tcp` TXT record encoding** (`cabledesk-discovery/src/
+  service.rs`, 4 tests): round-trips through encode/decode; a record
+  missing a required field is rejected; an unknown key from a
+  hypothetically newer CableDesk version is ignored rather than failing
+  (forward compatibility); and — directly enforcing the "no secrets in
+  mDNS" engineering rule — the encoded TXT records are asserted to never
+  contain anything key/secret/token/password-shaped.
 
 Run with: `cargo test --workspace` (see `scripts/dev-build.sh`).
+
+## Live-but-safe Phase 2 tests
+
+Several tests and manual checks in this milestone deliberately go beyond
+mocks and run real D-Bus/netlink calls (or start real binaries) against
+whatever machine executes them, because doing so is safe and reversible:
+
+- `cabledesk-network::manager::can_connect_and_subscribe_to_device_events`
+  and `can_subscribe_to_direct_link_events` — connect to the real system
+  bus and subscribe to NetworkManager's `DeviceAdded`/`DeviceRemoved`
+  signals (raw and direct-link-filtered). Read-only.
+- `cabledesk-network::validate::loopback_route_resolves_via_lo` and
+  `loopback_route_does_not_resolve_via_a_fabricated_interface` — a real
+  kernel FIB lookup via `rtnetlink`. Read-only.
+- `cabledesk-discovery::avahi::publish_browse_resolve_then_withdraw` —
+  publishes a uniquely-named `_cabledesk._tcp` test service to the real
+  `avahi-daemon`, browses for it, **resolves it, and asserts the resolved
+  record matches what was published**, then withdraws it. Mutating but
+  temporary and fully reversible (standard practice for anything using
+  Avahi); does not hard-fail if mDNS propagation doesn't complete within
+  5 seconds, since that timing isn't guaranteed in every environment.
+- `cabledesk-platform-fedora::firewall::can_query_installed_zones` and
+  `tests::install_firewall_policy_reports_zone_not_installed_honestly` —
+  query firewalld's currently-loaded zones. Read-only.
+- **Manual, not part of `cargo test` (see `docs/ROADMAP.md` Phase 2 for
+  the exact commands run):** started `cabledesk-agent` and confirmed
+  `GetState` over the real session bus returns `WaitingForCable` (real
+  hotplug watcher live, no synthetic state); ran `cabledeskctl
+  repair-network` and confirmed it correctly detects no direct-link
+  interface and reports "nothing to repair" without ever reaching the
+  mutating call; ran `cabledeskctl status` both with and without the
+  agent running, getting the correct real state or a clear failure
+  message in each case.
+
+**Never made live, in tests or manually, in this milestone:** any call
+that would create persistent state — `NetworkManagerClient::apply_profile`
+(a real, persistent NetworkManager connection profile) and
+`FirewallClient::bind_interface` (a real firewalld zone binding). Both are
+real, compiled, working code, reachable via `FedoraBackend::
+prepare_direct_link` and `cabledeskctl repair-network`'s mutating branch
+— but that branch has literally never executed in this milestone's
+environment, since it has no direct-link interface to trigger it. This
+is a deliberate scope decision (not an accident of missing hardware
+alone) to avoid mutating a development machine's real network
+configuration — see `docs/ROADMAP.md` Phase 2 and
+`docs/OPEN_QUESTIONS.md`.
 
 ## Mocked integration tests (not implemented yet)
 
@@ -49,12 +125,16 @@ collision, Sunshine/Moonlight startup failure, viewer crash, firewall
 failure, power status unavailable, discharging-while-connected, suspend/
 resume, upgrade/config migration.
 
-None of this can be written yet because the code it would test
-(`cabledesk-network`, `cabledesk-discovery`, `cabledesk-pairing`,
-`cabledesk-streaming`) doesn't exist — these are empty placeholder crates
-(see `docs/ARCHITECTURE.md`). Writing the mocks first, against an
-interface that doesn't exist, would just be guessing at the interface
-shape.
+`cabledesk-network` and `cabledesk-discovery` now exist (Phase 2), but
+their tests so far are either pure-logic (settings construction, TXT
+encoding) or live-but-safe (see above) — not mocked D-Bus. A proper mock
+of NetworkManager/Avahi/firewalld would let CableDesk test scenarios that
+aren't safe or possible to trigger live (identity mismatch, address
+collision, Sunshine/Moonlight startup failure) without touching real
+system state; it just hasn't been built yet. `cabledesk-pairing` and
+`cabledesk-streaming` remain empty placeholder crates (see
+`docs/ARCHITECTURE.md`) — writing their mocks first, against an interface
+that doesn't exist, would just be guessing at the interface shape.
 
 ## Real hardware tests (not performed yet, beyond what's noted below)
 

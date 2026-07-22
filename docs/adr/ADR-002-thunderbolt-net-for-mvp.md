@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (research-backed; not yet implemented — Phase 2).
+Accepted, implemented (Phase 2 — `cabledesk-network`/`cabledesk-platform-fedora`
+detect and use `thunderbolt-net` interfaces by driver match; not yet
+verified on real Thunderbolt/USB4 hardware — see `docs/OPEN_QUESTIONS.md`).
 
 ## Context
 

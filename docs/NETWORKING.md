@@ -346,13 +346,23 @@ hundred ms to ~1s in the absence of collisions) was described generically by
 IETF/zeroconf sources but a NetworkManager-specific benchmark/measurement
 was not found; this should be measured empirically on real hardware.
 
-**CableDesk implication:** `ipv4.method=link-local` (or, on NM ≥1.52,
-`ipv4.method=auto` combined with `ipv4.link-local=fallback` if DHCP-style
-auto-negotiation is ever desired later) plus `ipv4.never-default=yes` is the
-right shape for the cable-link connection profile: it gets both hosts an
-address in the same 169.254.0.0/16 subnet without any DHCP server, requires
-no manual IP configuration, and RFC 3927's collision handling is exactly the
-right behavior for a lab full of CableDesk users cabling machines together.
+**CableDesk implication:** `ipv4.method=link-local` plus
+`ipv4.never-default=yes` is the right shape for the cable-link connection
+profile: it gets both hosts an address in the same 169.254.0.0/16 subnet
+without any DHCP server, requires no manual IP configuration, and RFC
+3927's collision handling is exactly the right behavior for a lab full of
+CableDesk users cabling machines together.
+
+**Explicitly deferred, not in v1:** NM ≥1.52's `ipv4.link-local=fallback`
+mode (`ipv4.method=auto` that only falls back to a 169.254.x.y address if
+DHCP doesn't answer) is *not* used. There is no DHCP server on a direct
+cable link in any scenario CableDesk targets, so this mode adds a
+DHCP-timeout wait on every connection for no benefit — it exists in
+NetworkManager for networks that sometimes have DHCP and sometimes don't,
+which isn't this link. The direct-link profile always uses plain
+`ipv4.method=link-local`, unconditionally. If a future version wants to
+support networks where DHCP-vs-link-local ambiguity is real, revisit this
+as a deliberate feature addition with its own design, not as a default.
 
 ---
 

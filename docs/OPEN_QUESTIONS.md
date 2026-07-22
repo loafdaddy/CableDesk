@@ -111,10 +111,16 @@ page is the index, not a duplicate.
     real running helper in enforcing mode.
 18. **Exact `CapabilityBoundingSet`/`SystemCallFilter` minimum sets** for
     `cabledesk-helper` (`data/systemd/system/cabledesk-helper.service`
-    currently ships an empty bounding set, correct for right now since it
-    has no privileged actions) — must be derived from `systemd-analyze
-    security` plus `strace`/audit once Phase 2's real actions exist, not
-    guessed in advance.
+    currently ships an empty bounding set). Phase 2's real actions
+    (`prepare_direct_link`, `install_firewall_policy`) now exist in
+    `cabledesk-platform-fedora`, and — unlike kernel module loading —
+    neither one obviously needs a new Linux capability of its own: both
+    are pure D-Bus calls to NetworkManager/firewalld, which do the
+    privileged work themselves. This is a reasoned expectation, not a
+    verified one — still needs `systemd-analyze security` plus
+    `strace`/audit against the helper unit actually running these calls
+    (which hasn't happened — see item 26) before treating the empty
+    bounding set as confirmed sufficient.
 19. **rpmautospec applicability** — whether CableDesk ends up building
     through Fedora's dist-git+koji pipeline (where `%autorelease`/
     `%autochangelog` are the current default) or as a standalone COPR/
@@ -144,7 +150,8 @@ page is the index, not a duplicate.
     `auth_admin_keep` as a starting point. Whether these single-user
     workstation actions actually warrant `auth_self_keep` instead (the
     user's own password, not an administrator's) should be revisited
-    before Phase 2 ships — see that policy file's own comment.
+    before relying on these actions in production — see that policy
+    file's own comment.
 24. **`UserFacingError`'s secret-redaction depth** — the current unit test
     (`error::tests::user_facing_never_leaks_debug_formatting`) only checks
     that one specific error variant's headline doesn't contain a specific
@@ -153,6 +160,52 @@ page is the index, not a duplicate.
     `Display`/mapping. Worth a stronger invariant (e.g. a lint or trait
     bound) once more error variants with genuinely sensitive payloads
     exist (Phase 3+).
+## Phase 2 implementation (networking/discovery)
+
+26. **`prepare_direct_link` and `install_firewall_policy` (`cabledesk-
+    platform-fedora`) have never been invoked against a live system** —
+    they're real, compiled, working D-Bus code (and `cabledesk-agent` now
+    really does drive its state machine from live NetworkManager hotplug
+    events, and `cabledeskctl repair-network` really does call
+    `prepare_direct_link` when a direct-link interface is detected), but
+    the *mutating* branch of that call path has never actually executed —
+    this milestone's hardware has no direct-link interface, so
+    `repair-network` always takes the honest "nothing to repair" path
+    instead. Also, neither method is reachable from `cabledesk-helper`'s
+    own D-Bus surface yet — only from a separate process calling
+    `FedoraBackend` directly (`cabledeskctl`). *Needs:* real
+    Thunderbolt/USB4 hardware, a decision on how the helper exposes these
+    as D-Bus methods (with Polkit gating — see `data/polkit-1/actions/
+    org.cabledesk.Helper1.policy`), and then an actual end-to-end test.
+27. **Resolved:** route-table validation is now implemented
+    (`cabledesk_network::validate::route_resolves_via_interface`, via
+    `rtnetlink`'s kernel FIB lookup) and tested live (127.0.0.1 resolves
+    via `lo`). Not yet exercised for an actual direct-link interface,
+    since none exists in this milestone's environment — real hardware
+    would confirm the same code path against `thunderbolt0`-style names.
+28. **Resolved:** `ResolveService` is now implemented
+    (`AvahiClient::resolve`), its exact D-Bus signature confirmed against
+    Avahi's own upstream interface XML, and exercised live end-to-end
+    (publish → browse → resolve → assert the resolved record matches →
+    withdraw).
+29. **NetworkManager's `AddConnection` reply/error shape under real
+    failure conditions is unverified** — `docs/NETWORKING.md` documents
+    the method signature from NetworkManager's own D-Bus reference, but
+    this milestone never called it against a live bus (see item 26), so
+    behavior on a duplicate profile, an invalid interface name, or a
+    permissions failure is understood from documentation only, not
+    observed.
+30. **`cabledesk-agent`'s hotplug watcher has never seen a real
+    direct-link interface appear or disappear** — the `DirectLinkEvent`
+    stream, the `CableDetected`/`WaitingForCable` transitions it drives,
+    and the reconnect-on-failure loop are all real code, verified to
+    start up correctly and report `WaitingForCable` on a hardware-less
+    machine, but the actual "cable plugged in, state changes" path is
+    unverified — same underlying gap as item 26, just from the
+    `cabledesk-agent` side rather than `cabledeskctl repair-network`'s.
+
+## Other deferred decisions
+
 25. **Whether `cabledesk-agent` should be D-Bus-activated** (started
     on-demand by dbus-daemon) **rather than started directly by systemd
     with `Type=dbus`** (the current choice, see
@@ -160,3 +213,24 @@ page is the index, not a duplicate.
     milestone picked the simpler always-running-service model since the
     agent is meant to be always available once a session starts. Revisit
     if startup-time/resource-usage data suggests otherwise.
+31. **`cabledeskctl status`'s D-Bus client is hand-written locally in
+    `crates/cabledeskctl/src/main.rs` rather than sharing a proxy
+    definition with `cabledesk-agent`** — fine at one caller, but if a
+    second caller needs the same `org.cabledesk.Agent1` proxy (e.g. the
+    GTK UI, per item 25's cross-reference), this should move to a shared
+    location (perhaps `cabledesk-core` or a new thin crate) rather than
+    being copy-pasted.
+32. **CableDesk's own reserved Polkit actions
+    (`org.cabledesk.helper.prepare-direct-link`,
+    `org.cabledesk.helper.install-firewall-policy`) are not wired up or
+    enforced anywhere.** `cabledeskctl repair-network` calls
+    `prepare_direct_link`/`install_firewall_policy` directly as the
+    logged-in user, not through `cabledesk-helper`, so authorization for
+    these mutating operations currently comes entirely from
+    NetworkManager's and firewalld's own Polkit policies, not
+    CableDesk's — see `docs/SECURITY.md`, "An architectural gap this
+    milestone surfaced." *Needs a decision*: either route these calls
+    through `cabledesk-helper` with a real `CheckAuthorization` call
+    before Phase 3, or explicitly retire these two reserved actions as
+    redundant with NM's/firewalld's own gating — but decide deliberately,
+    don't leave it implicit.

@@ -2,7 +2,9 @@
 
 ## Status
 
-Accepted (research-backed; not yet implemented — Phase 2).
+Accepted, implemented (Phase 2 — `cabledesk-network::NetworkManagerClient`;
+the mutating `apply_profile` call has never been exercised against a live
+system, see `docs/TEST_PLAN.md`).
 
 ## Context
 
@@ -34,11 +36,15 @@ commands; use shell commands only for early proof-of-concept experiments."
 ## Consequences
 
 - No new dependency beyond `zbus`, already in the workspace.
-- The profile is created with `ipv4.method=link-local` (or `ipv4.method=
-  auto` + `ipv4.link-local=fallback` on NetworkManager ≥1.52) and
+- The profile is created with plain `ipv4.method=link-local` and
   `ipv4.never-default=yes`, plus `connection.interface-name` scoping it to
   the specific direct-link device — see `docs/NETWORKING.md` §3–4 for the
-  exact settings.
+  exact settings. NetworkManager's `ipv4.link-local=fallback` mode
+  (DHCP-first, link-local only if DHCP doesn't answer) is deliberately not
+  used in v1 — there is no DHCP server on this link in any scenario
+  CableDesk targets, so that mode would only add a DHCP-timeout wait with
+  no benefit. Deferred to a future update if a real DHCP-vs-link-local
+  ambiguity ever needs supporting — see `docs/NETWORKING.md` §4.
 - Interface lifecycle detection can reuse the same D-Bus connection
   already needed for profile management (`DeviceAdded`/`DeviceRemoved`
   signals) rather than adding a second, lower-level netlink/udev watcher —

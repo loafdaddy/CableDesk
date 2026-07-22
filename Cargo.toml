@@ -48,6 +48,9 @@ clap = { version = "4", features = ["derive"] }
 gtk4 = { version = "0.11", package = "gtk4" }
 libadwaita = { version = "0.9", features = ["v1_5"] }
 async-channel = "2"
+nix = { version = "0.31", default-features = false, features = ["net"] }
+futures-util = "0.3"
+rtnetlink = "0.21"
 
 [profile.release]
 lto = true

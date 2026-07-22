@@ -36,12 +36,13 @@ may import `cabledesk-platform-fedora` directly or branch on distro.
   `cabledesk-platform-arch`/etc. implementing the same trait, not
   rewriting the application — see `docs/DISTRO_SUPPORT.md`.
 - The trait's two mutating methods (`prepare_direct_link`,
-  `install_firewall_policy`) are part of the trait from the start even
-  though only `FedoraBackend`'s read-only methods are implemented this
-  milestone — they return an explicit "not implemented yet" error rather
-  than being absent from the trait, so the interface shape is settled
-  before Phase 2 fills it in, and no caller can silently treat "not
-  implemented" as "succeeded."
+  `install_firewall_policy`) were part of the trait from the start, even
+  before Phase 1's `FedoraBackend` implemented anything beyond an
+  explicit "not implemented yet" error for them — settling the interface
+  shape before Phase 2 filled it in meant no caller could silently treat
+  "not implemented" as "succeeded" in the meantime. As of Phase 2, both
+  are real implementations (see `docs/ROADMAP.md`), still behind the same
+  trait signature unchanged.
 - Report types (`SystemInfo`, `DependencyReport`, `SecurityReport`,
   `PowerDeliveryStatus`, `PlatformDiagnostics`, `CompatibilityCheck`) are
   also defined once in `cabledesk-platform`, shared by every backend — a

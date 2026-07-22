@@ -76,12 +76,33 @@ Three processes, matching `docs/ARCHITECTURE.md`:
   perform its own `org.freedesktop.PolicyKit1.Authority.CheckAuthorization`
   call against an action ID in `data/polkit-1/actions/` before doing
   anything (see engineering rule: Polkit checks triggered by clear user
-  action, never blocking the GTK main thread). **This milestone implements
-  zero privileged actions** — `prepare_direct_link` and
-  `install_firewall_policy` in `cabledesk-platform-fedora` both return an
-  explicit "not implemented" error rather than silently no-op'ing, so
-  nothing can be tricked into skipping an authorization check that was
-  never written.
+  action, never blocking the GTK main thread). **This milestone's helper
+  still implements zero privileged actions of its own** — `Version`,
+  `Ping`, `CollectDiagnosticsJson` only.
+
+### An architectural gap this milestone surfaced, not yet closed
+
+`prepare_direct_link` and `install_firewall_policy` (in
+`cabledesk-platform-fedora`) are real, working, mutating code as of
+Phase 2 — but they are called directly by `cabledeskctl repair-network`,
+which runs as the logged-in **user**, not through `cabledesk-helper` at
+all. This works today only because NetworkManager and firewalld each
+enforce **their own** Polkit authorization for the calling user
+independently of CableDesk (a normal desktop user is typically already
+authorized by NM's/firewalld's own policy to manage connections/zones at
+the seat). That is real defense-in-depth from those two services, but it
+means **none of CableDesk's own reserved Polkit actions
+(`org.cabledesk.helper.prepare-direct-link`,
+`org.cabledesk.helper.install-firewall-policy`, in
+`data/polkit-1/actions/org.cabledesk.Helper1.policy`) are wired up or
+enforced anywhere yet** — they exist as unused reservations, not active
+gates. Before this path is relied on for anything more sensitive than a
+development CLI, either route it through `cabledesk-helper` with a real
+`CheckAuthorization` call, or make a deliberate, documented decision that
+NM's/firewalld's own authorization is sufficient and CableDesk's
+reserved actions for these two specific operations can be retired. Not
+deciding is itself a decision here, so it's tracked explicitly in
+`docs/OPEN_QUESTIONS.md` rather than left implicit.
 
 ### A concrete finding from this milestone
 
@@ -144,3 +165,13 @@ reports SELinux/firewalld status; it never changes either.
   `data/polkit-1/actions/org.cabledesk.Helper1.policy` are a starting
   point (`auth_admin_keep`), not a reviewed final decision — see that
   file's own comment and `docs/OPEN_QUESTIONS.md`.
+- **CableDesk's own Polkit actions are currently unused** — see "An
+  architectural gap this milestone surfaced" above. The direct-link
+  mutating operations (`prepare_direct_link`, `install_firewall_policy`)
+  run today as the logged-in user via `cabledeskctl`, relying entirely on
+  NetworkManager's and firewalld's own authorization, not CableDesk's.
+- Phase 2's networking/discovery code (`cabledesk-network`,
+  `cabledesk-discovery`) has never run against real Thunderbolt/USB4
+  hardware or a second machine — everything verified so far is against
+  one development machine's own NetworkManager/Avahi/firewalld/routing
+  table. See `docs/TEST_PLAN.md` and `docs/OPEN_QUESTIONS.md` items 26–30.

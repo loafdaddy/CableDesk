@@ -26,7 +26,8 @@ through the direct cable" — is **not met yet**.
 
 ## Phase 1 — Secure project foundation
 
-**Status: this milestone.**
+**Status: complete** (software + single-machine verification; no Thunderbolt
+hardware on the development machine).
 
 Delivered: Rust workspace, core state model, platform abstraction, Fedora
 backend, structured logging (`tracing`/`tracing-journald`), basic GTK
@@ -43,14 +44,70 @@ nor on any Tier 2/3 platform.
 
 ## Phase 2 — Automated networking
 
-**Not started.** Deliverables: hotplug detection, the NetworkManager
-direct-link profile (`ipv4.method=link-local` + `ipv4.never-default`, per
-`docs/NETWORKING.md`), mDNS discovery scoped to the direct interface,
-interface/route validation, firewalld integration, cable-removal handling,
-`cabledeskctl repair-network`. This is where
-`PlatformBackend::prepare_direct_link` and `install_firewall_policy` get
-real implementations (they currently return an explicit "not implemented"
-error).
+**Complete at the software/single-machine level.** Every deliverable in
+the original plan (hotplug detection, the NetworkManager direct-link
+profile, mDNS discovery, interface/route validation, firewalld
+integration, cable-removal handling, `cabledeskctl repair-network`) now
+has a real, working implementation:
+
+- `cabledesk-network`: `DirectLinkProfile` (the NetworkManager
+  link-local/never-default settings dictionary — pure, unit-tested);
+  `NetworkManagerClient` (real `zbus` code for `Settings.AddConnection`,
+  a merged `DeviceAdded`/`DeviceRemoved` signal stream, and
+  `watch_direct_link_events` — the same stream filtered down to
+  interfaces whose driver matches `thunderbolt-net`, caching the name at
+  `Added` time so `Removed` doesn't need to re-query a possibly-already-gone
+  D-Bus object); `address_belongs_to_interface` (real address-assignment
+  validation, tested live against `lo`) and `route_resolves_via_interface`
+  (a real kernel FIB lookup via `rtnetlink` — the same `RTM_GETROUTE`
+  mechanism `ip route get` uses — tested live: 127.0.0.1 resolves via
+  `lo`, a fabricated interface name doesn't).
+- `cabledesk-agent`: now actually watches `watch_direct_link_events` and
+  drives the shared state machine — `WaitingForCable` on startup,
+  `CableDetected` when the interface appears, back to `WaitingForCable`
+  the instant it disappears (never a "streaming over something else"
+  state — see `docs/adr/ADR-007-direct-interface-only.md`). Verified live:
+  started the agent, queried `GetState` over the real session bus, got
+  `WaitingForCable` back.
+- `cabledesk-discovery`: the `_cabledesk._tcp` `ServiceRecord`/TXT-record
+  encoding (pure, unit-tested, including a test that the encoding never
+  contains anything key/secret/token/password-shaped); `AvahiClient` for
+  interface-scoped `publish`/`browse`/`resolve` (`ResolveService`'s exact
+  signature confirmed against Avahi's own D-Bus interface XML upstream,
+  not assumed) — exercised live end-to-end: publish a uniquely-named test
+  service, browse for it, resolve it, confirm the resolved record matches
+  what was published, withdraw it.
+- `PlatformBackend::prepare_direct_link` and `install_firewall_policy`
+  (in `cabledesk-platform-fedora`) are real implementations: the former
+  creates the NetworkManager profile and binds the interface into the
+  CableDesk firewalld zone (mutating — deliberately never invoked against
+  a live system by this workspace's own tests, see `docs/TEST_PLAN.md`);
+  the latter is read-only (just confirms the zone is loaded) and is
+  exercised live.
+- `cabledeskctl repair-network` detects the current direct-link interface
+  and calls `prepare_direct_link` on it, or honestly reports "nothing to
+  repair" if none is present (verified live — on this milestone's
+  hardware, that's always the no-op path, which is itself a real,
+  meaningful test: the code correctly never reaches the mutating call
+  when there's nothing to act on). `cabledeskctl status` queries the
+  agent's real `GetState` over D-Bus.
+
+**Still not exercised against real Thunderbolt/USB4 hardware or a second
+machine** — every "real, live" test above is real D-Bus/netlink code
+running against this one machine's NetworkManager/Avahi/firewalld/routing
+table, not an end-to-end two-machine test. That remains the actual
+Phase 2 success condition below, and the honest state is: the plumbing
+works, hardware validation hasn't happened. See `docs/TEST_PLAN.md`.
+
+**Explicitly deferred out of v1** (revisit only as a deliberate future
+addition, not a default): NetworkManager's DHCP-first/link-local-fallback
+addressing mode (`ipv4.link-local=fallback`) — the direct link never has a
+DHCP server, so v1 always uses plain `ipv4.method=link-local` — see
+`docs/NETWORKING.md` §4 and `docs/adr/ADR-003-networkmanager-dbus.md`.
+More generally, no network-fallback/auto-negotiation behavior beyond exact
+direct-link detection is in scope for v1: if the direct interface isn't
+there, CableDesk reports that honestly rather than trying alternate
+addressing strategies to work around it.
 
 **Success condition:** connecting the cable causes both CableDesk agents to
 discover each other automatically.
@@ -113,13 +170,31 @@ uninstall/purge documentation.
 
 ## Immediate next task recommendation
 
-Phase 2 cannot be meaningfully tested without two USB4/Thunderbolt-capable
-machines connected by a real cable. Before writing Phase 2 networking code,
-the highest-value next step is **hands-on Phase 0 hardware validation**:
-get `thunderbolt-net` up between two real Linux machines, confirm the
-interface-naming and security-level-authorization open questions in
-`docs/NETWORKING.md` (items 1–2), and do a manual (non-CableDesk) Sunshine↔
-Moonlight stream over that link to validate the capture-backend choice in
-`docs/UPSTREAM_INTEGRATION.md` before automating any of it. Writing
-`cabledesk-network`/`cabledesk-discovery` against unverified assumptions
-about interface-appearance timing risks building the wrong thing.
+Phase 2's code is now feature-complete at the software level — hotplug
+detection, NetworkManager profile creation, route validation, mDNS
+discovery/resolve, firewalld integration, and `cabledeskctl
+repair-network` all exist, compile, and run correctly against this
+machine's real NetworkManager/Avahi/firewalld/routing table. The agent
+watches direct-link hotplug and drives the state machine, but does **not
+yet** call `cabledesk-discovery`'s `AvahiClient` to publish/browse peers
+(that library is covered by its own live Avahi tests; wiring it into the
+agent is the remaining software step before the Phase 2 success
+condition can even be attempted). **None of that is the same as
+validating Phase 2 end-to-end**, which needs two USB4/Thunderbolt-capable
+machines connected by a real cable — this milestone's environment has
+never had one. The highest-value next step is **hands-on hardware
+validation**: get `thunderbolt-net` up between two real Linux machines,
+confirm the interface-naming and security-level-authorization open
+questions in `docs/NETWORKING.md` (items 1–2), watch whether
+`cabledesk-agent`'s hotplug watcher actually transitions to
+`CableDetected` for the real interface appearing, wire Avahi publish/
+browse into the agent, and only then exercise
+`prepare_direct_link`/`cabledeskctl repair-network`'s mutating path for
+real (it has deliberately never been run against a live system so far —
+see `docs/TEST_PLAN.md`). Doing a manual (non-CableDesk)
+Sunshine↔Moonlight stream over that link to validate the capture-backend
+choice in `docs/UPSTREAM_INTEGRATION.md` is still worth doing before
+wiring up `cabledesk-streaming` in Phase 4.
+
+If hardware isn't available yet, Phase 3 (pairing) can proceed in
+parallel purely in software — it has no hardware dependency of its own.

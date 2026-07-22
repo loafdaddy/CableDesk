@@ -1,8 +1,10 @@
 # CableDesk Architecture
 
-Status: describes the architecture as implemented in this milestone (Phase 1
-of `docs/ROADMAP.md`) plus the target architecture it is built toward. Where
-something is not implemented yet, that is called out explicitly.
+Status: describes the architecture as implemented through Phase 2 of
+`docs/ROADMAP.md` (Phase 1 read-only compatibility detection, plus Phase 2
+NetworkManager/Avahi/firewalld D-Bus code) plus the target architecture
+it is built toward. Where something is not implemented yet, that is
+called out explicitly.
 
 ## Component overview
 
@@ -14,7 +16,7 @@ something is not implemented yet, that is called out explicitly.
 │ Hardware video decoding               [not built yet]│
 └───────────────────────┬─────────────────────────────┘
                         │
-              USB4/Thunderbolt networking [not built yet]
+     USB4/Thunderbolt networking [code exists, unverified on real hardware]
                         │
 ┌───────────────────────┴─────────────────────────────┐
 │ Host computer                                        │
@@ -38,18 +40,19 @@ runs more code than it has to:
 | Binary | Runs as | Bus | Status this milestone |
 |---|---|---|---|
 | `cabledesk` (`crates/cabledesk-ui`) | logged-in user | — (D-Bus client, not yet) | Displays read-only compatibility info by calling `PlatformBackend` directly in-process |
-| `cabledeskctl` (`crates/cabledeskctl`) | logged-in user | — | Diagnostics/dev CLI; `compatibility`, `diagnostics`, `power`, `links` are implemented, everything else prints "not implemented in this milestone" |
-| `cabledesk-agent` (`crates/cabledesk-agent`) | logged-in user, `systemd --user` | session, `org.cabledesk.Agent1` | Skeleton: exposes `Version` and `GetState` (always `Unconfigured`) over D-Bus |
-| `cabledesk-helper` (`crates/cabledesk-helper`) | root, system `systemd` service | system, `org.cabledesk.Helper1` | Skeleton: exposes `Version`, `Ping`, `CollectDiagnosticsJson`. No privileged action is implemented — `PlatformBackend::prepare_direct_link` and `install_firewall_policy` return an explicit "not implemented" error rather than doing nothing silently |
+| `cabledeskctl` (`crates/cabledeskctl`) | logged-in user | session (client, for `status`) | Diagnostics/dev CLI; `compatibility`, `diagnostics`, `power`, `links`, `status`, `repair-network` are implemented, everything else prints "not implemented in this milestone" |
+| `cabledesk-agent` (`crates/cabledesk-agent`) | logged-in user, `systemd --user` | session, `org.cabledesk.Agent1` | Real hotplug wiring (Phase 2): watches `cabledesk_network::NetworkManagerClient::watch_direct_link_events` and drives the shared `StateMachine` — `WaitingForCable` on startup, `CableDetected` when the direct-link interface appears, back to `WaitingForCable` the instant it disappears. `GetState` reflects this live (verified: queried over the real session bus, got `WaitingForCable` back) |
+| `cabledesk-helper` (`crates/cabledesk-helper`) | root, system `systemd` service | system, `org.cabledesk.Helper1` | Exposes `Version`, `Ping`, `CollectDiagnosticsJson`. Its `PlatformBackend` (`FedoraBackend`) now has real `prepare_direct_link`/`install_firewall_policy` implementations (Phase 2) — see below — but this binary has no D-Bus method that calls them yet; they're reachable today only via direct Rust calls (`cabledeskctl repair-network` does this today, from a separate process, not through the helper's own D-Bus surface) |
 
 **Why `cabledesk` doesn't yet talk to `cabledesk-agent` over D-Bus:** this
 milestone's GUI only needs read-only compatibility data, which
 `cabledesk-platform-fedora` can provide directly and cheaply. Routing it
 through the agent's D-Bus API first would add a hop with no present benefit.
-Once state (pairing, connection progress) needs to live in a long-running
-process shared across UI launches, the GUI should switch to reading
-`cabledesk-agent`'s `GetState`/future methods instead of duplicating
-detection logic — tracked in `docs/ROADMAP.md` Phase 2+.
+`cabledeskctl status` already demonstrates the intended pattern (a
+separate process reading `cabledesk-agent`'s real `GetState`) — the GTK UI
+should switch to the same approach once it needs live connection-progress
+state, rather than duplicating detection logic — tracked in
+`docs/ROADMAP.md` Phase 3+.
 
 ## Shared crates
 
@@ -77,7 +80,8 @@ detection logic — tracked in `docs/ROADMAP.md` Phase 2+.
   boundary — at least 90% of CableDesk should never import
   `cabledesk-platform-fedora` directly.
 - **`cabledesk-platform-fedora`**: the first (and only, so far) concrete
-  backend. Every check is read-only:
+  backend. Most inspect methods are read-only; mutating Phase 2 methods
+  are called out below:
   - `system.rs` — parses `/etc/os-release`, `$XDG_CURRENT_DESKTOP`,
     `$XDG_SESSION_TYPE`, `/proc/sys/kernel/{osrelease,hostname}`.
   - `dependencies.rs` — NetworkManager/Avahi/firewalld/UPower/Polkit
@@ -96,14 +100,38 @@ detection logic — tracked in `docs/ROADMAP.md` Phase 2+.
     `/sys/bus/thunderbolt/`, `/proc/modules`, and `/sys/class/net/*/device/
     driver` — **never hardcodes `thunderbolt0`** (engineering rule), instead
     matching on driver name.
-  - `prepare_direct_link`/`install_firewall_policy` are implemented but
-    return `CableDeskError::Config("not implemented yet...")` explicitly —
-    Phase 2 work, tracked in `docs/ROADMAP.md`.
-- **`cabledesk-network`, `cabledesk-discovery`, `cabledesk-pairing`,
-  `cabledesk-streaming`, `cabledesk-power`, `cabledesk-diagnostics`**: empty
-  placeholder crates holding the workspace shape described in this document;
-  see each crate's doc comment for which `docs/ROADMAP.md` phase builds it
-  out.
+  - `firewall.rs` — a firewalld D-Bus client scoped to the non-deprecated
+    `.zone` interface (see `docs/PACKAGING.md`'s firewalld research).
+  - `prepare_direct_link` and `install_firewall_policy` are now real
+    (Phase 2): the former creates the NetworkManager profile (via
+    `cabledesk-network`) and binds the interface into the CableDesk
+    firewalld zone — mutating, and **deliberately never invoked against a
+    live system by this workspace's own tests** (see `docs/TEST_PLAN.md`).
+    The latter just confirms the zone is loaded (read-only) and is
+    exercised live.
+- **`cabledesk-network`** (Phase 2): `profile::DirectLinkProfile` builds the
+  NetworkManager link-local/never-default settings dictionary (pure,
+  unit-tested); `manager::NetworkManagerClient` wraps `zbus` for
+  `Settings.AddConnection`, a merged `DeviceAdded`/`DeviceRemoved` signal
+  stream, and `watch_direct_link_events` (the same stream filtered to
+  `thunderbolt-net`-driver devices, with an interface-name cache so a
+  `Removed` event doesn't need to re-query a possibly-already-gone D-Bus
+  object — this is what `cabledesk-agent` drives its state machine from);
+  `validate::address_belongs_to_interface` (address-assignment check) and
+  `validate::route_resolves_via_interface` (a real kernel FIB lookup via
+  `rtnetlink`, the same `RTM_GETROUTE` mechanism `ip route get` uses) —
+  together, the full `docs/adr/ADR-007-direct-interface-only.md` check.
+- **`cabledesk-discovery`** (Phase 2): `service::ServiceRecord` is the
+  `_cabledesk._tcp` record shape and its TXT-record encoding (pure,
+  unit-tested — including a test that the encoding never contains
+  anything key/secret/token/password-shaped, per "no secrets in mDNS");
+  `avahi::AvahiClient` wraps `zbus` for interface-scoped
+  `publish`/`browse`/`resolve` against `org.freedesktop.Avahi.Server`
+  (`ResolveService`'s signature was confirmed against Avahi's own D-Bus
+  interface XML upstream, not assumed).
+- **`cabledesk-pairing`, `cabledesk-streaming`, `cabledesk-power`,
+  `cabledesk-diagnostics`**: still empty placeholder crates; see each
+  crate's doc comment for which `docs/ROADMAP.md` phase builds it out.
 
 ## D-Bus surface
 
@@ -143,8 +171,14 @@ result back via an `async-channel`, since GTK widgets are not `Send` — see
 
 ## What is explicitly *not* built yet
 
-Pairing, the direct-link NetworkManager profile, mDNS discovery, managed
-Sunshine/Moonlight runtimes, the streaming session itself, clipboard sync,
-and suspend/logind integration. See `docs/ROADMAP.md` for the phase each of
-these belongs to, and `docs/OPEN_QUESTIONS.md` for what's still unresolved
-even at the research level.
+Pairing, managed Sunshine/Moonlight runtimes, the streaming session
+itself, clipboard sync, and suspend/logind integration are not built at
+all. Phase 2 (direct-link NetworkManager profile, hotplug detection, mDNS
+discovery, route validation, firewalld integration) is code-complete and
+wired into `cabledesk-agent`'s state machine, but — critically — **has
+never been exercised against real Thunderbolt/USB4 hardware or a second
+machine**, only against this one machine's live
+NetworkManager/Avahi/firewalld/routing table for the parts that are safe
+to test that way (see `docs/TEST_PLAN.md`). See `docs/ROADMAP.md` for the
+phase each remaining piece belongs to, and `docs/OPEN_QUESTIONS.md` for
+what's still unresolved even at the research level.

@@ -16,6 +16,7 @@ path = "src/main.rs"
 cabledesk-core.workspace = true
 cabledesk-platform.workspace = true
 cabledesk-platform-fedora.workspace = true
+zbus.workspace = true
 tokio.workspace = true
 clap.workspace = true
 serde_json.workspace = true

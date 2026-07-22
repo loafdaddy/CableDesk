@@ -70,14 +70,14 @@ async fn module_check() -> CompatibilityCheck {
     }
 }
 
-async fn direct_interface_check() -> CompatibilityCheck {
-    let Ok(mut entries) = tokio::fs::read_dir("/sys/class/net").await else {
-        return CompatibilityCheck::new(
-            "Direct network interface",
-            CheckStatus::Unknown,
-            Some("Could not read /sys/class/net.".to_string()),
-        );
-    };
+/// Scans `/sys/class/net/*/device/driver` for interfaces whose driver
+/// name looks like `thunderbolt-net` — the one detection primitive
+/// shared by the compatibility check below and
+/// [`detect_direct_link_interface_name`], so there is exactly one place
+/// that decides what counts as "the direct interface" (never a hardcoded
+/// `thunderbolt0`).
+async fn find_direct_link_interfaces() -> std::io::Result<Vec<String>> {
+    let mut entries = tokio::fs::read_dir("/sys/class/net").await?;
 
     let mut matches = Vec::new();
     while let Ok(Some(entry)) = entries.next_entry().await {
@@ -92,6 +92,17 @@ async fn direct_interface_check() -> CompatibilityCheck {
             }
         }
     }
+    Ok(matches)
+}
+
+async fn direct_interface_check() -> CompatibilityCheck {
+    let Ok(matches) = find_direct_link_interfaces().await else {
+        return CompatibilityCheck::new(
+            "Direct network interface",
+            CheckStatus::Unknown,
+            Some("Could not read /sys/class/net.".to_string()),
+        );
+    };
 
     if matches.is_empty() {
         CompatibilityCheck::new(
@@ -118,4 +129,12 @@ pub async fn inspect_direct_link() -> Result<Vec<CompatibilityCheck>> {
         module_check().await,
         direct_interface_check().await,
     ])
+}
+
+/// The first currently-present direct-link interface name, if any — for
+/// callers (like `cabledeskctl repair-network`) that need to act on it,
+/// not just report its status. `None` means honestly "no direct-link
+/// interface is present right now," not an error.
+pub async fn detect_direct_link_interface_name() -> Result<Option<String>> {
+    Ok(find_direct_link_interfaces().await?.into_iter().next())
 }

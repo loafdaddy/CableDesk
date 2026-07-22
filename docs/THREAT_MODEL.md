@@ -78,7 +78,15 @@ letting the underlying transport quietly re-route — see
 `ConnectionState::Streaming`'s only non-error transitions in
 `cabledesk-core/src/state.rs` (`Suspended`, `Disconnecting`,
 `WaitingForCable` — never a "still streaming, just slower" state).
-**Enforcement not implemented yet** (Phase 2/4).
+**Partially implemented as of Phase 2:** both validation primitives now
+exist and are tested live —
+`cabledesk_network::validate::address_belongs_to_interface` and
+`route_resolves_via_interface` (a real kernel FIB lookup) — and
+`cabledesk-agent`'s hotplug watcher already forces the state machine back
+to `WaitingForCable` the instant the direct-link interface disappears.
+**Not yet wired into an actual stream** (there is no stream yet — Phase 4)
+and not yet exercised against a real second machine — see
+`docs/OPEN_QUESTIONS.md` items 27, 30.
 
 ### T4 — mDNS discovery treated as authentication
 
@@ -102,9 +110,18 @@ no method accepts a shell command or an arbitrary file path. Every future
 privileged method must perform its own
 `org.freedesktop.PolicyKit1.Authority.CheckAuthorization` call (action IDs
 already reserved in `data/polkit-1/actions/org.cabledesk.Helper1.policy`)
-before doing anything. This milestone's helper implements no privileged
-actions at all, so there is currently no such call to audit — tracked as
-the first thing to get right in Phase 2.
+before doing anything. **`cabledesk-helper`'s own D-Bus surface still
+implements no privileged actions at all** — it exposes only `Version`,
+`Ping`, `CollectDiagnosticsJson`. The real mutating operations that exist
+as of Phase 2 (`prepare_direct_link`, `install_firewall_policy`) are
+called directly by `cabledeskctl repair-network` running as the
+logged-in user, bypassing `cabledesk-helper` and its reserved Polkit
+actions entirely — this only stays safe today because NetworkManager and
+firewalld each enforce their own authorization for the calling user
+independently of CableDesk. See `docs/SECURITY.md`, "An architectural gap
+this milestone surfaced," and `docs/OPEN_QUESTIONS.md` item 32 — this is
+the first thing to resolve properly before Phase 3, not a closed
+question.
 
 ### T6 — Secrets leaking via logs, process arguments, or diagnostics
 
@@ -141,9 +158,9 @@ a context where stolen-device risk is higher.
 |---|---|---|
 | T1 | Physical cable ≠ trust | Designed for, not implemented |
 | T2 | Spoofed peer identity | Designed for (error type exists), not implemented |
-| T3 | Silent Wi-Fi fallback | Designed for (state machine shape), not enforced |
+| T3 | Silent Wi-Fi fallback | Validation primitives implemented and tested live; not yet wired into a stream (none exists) or verified on real hardware |
 | T4 | mDNS as auth | Avoided by design (mDNS carries no secrets) |
-| T5 | Helper input validation | Interface is narrow/typed; no privileged actions to audit yet |
+| T5 | Helper input validation | Interface is narrow/typed; real mutating ops exist but bypass the helper and its reserved Polkit actions entirely (open gap, item 32) |
 | T6 | Secret leakage via logs/diagnostics | Enforced today for the error/diagnostics paths that exist |
 | T7 | Compromised trusted peer | Accepted limitation (manual `Forget`, no revocation broadcast) |
 
