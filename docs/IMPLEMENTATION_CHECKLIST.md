@@ -73,10 +73,24 @@ not implemented and were not claimed to work — Phase 1 itself was read-only
 compatibility detection, tested on one real machine that has no
 Thunderbolt/USB4 hardware.
 
-**Update:** Phase 2 (automated networking — NetworkManager profile
-management, hotplug detection, mDNS discovery, route validation,
-firewalld integration) has since been completed at the software level; see
-`docs/ROADMAP.md`'s Phase 2 section for what it covers and
-`docs/OPEN_QUESTIONS.md` for what's still unverified. This file remains a
-historical record of the Phase 1 milestone specifically and is not
-updated for later phases.
+**Update (2026-07-23):** Phase 2 software orchestration is wired — agent
+Avahi + peer validation, helper `PrepareDirectLink` + Polkit, UI Session
+panel, simulation. Authoritative status: `docs/CURRENT_STATUS.md` and
+`docs/ROADMAP.md`. This file remains primarily a Phase 1 historical
+checklist.
+
+### Phase 2+ checklist (2026-07-23)
+
+- [x] Cable-only interface classification (`InterfaceClassification`)
+- [x] Peer policy types (`PreparedDirectLink`, `ValidatedCablePeer`)
+- [x] `simulation` feature + `cabledeskctl simulate` (dev builds only)
+- [x] Simulated E2E lifecycle tests (Wi-Fi/Ethernet reject, cable unplug)
+- [x] `docs/CURRENT_STATUS.md`, `docs/HARDWARE_TEST_PLAN.md`,
+      `docs/PROJECT_PLAN.md`
+- [x] Agent wires Avahi + `validate_cable_peer` on live hotplug path
+- [x] Helper D-Bus `PrepareDirectLink` + Polkit CheckAuthorization
+- [x] UI polls agent session state
+- [x] `cabledeskctl session` + `repair-network` via helper
+- [ ] Physical USB4/Thunderbolt two-machine validation (deferred)
+- [ ] RPM/`rpmlint` build verification
+- [ ] Phase 3 pairing

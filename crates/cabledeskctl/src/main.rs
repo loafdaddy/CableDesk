@@ -30,6 +30,8 @@ enum Command {
     Diagnostics,
     /// Print the current CableDesk agent state.
     Status,
+    /// Print the agent session snapshot (state, interface, peer).
+    Session,
     /// List detected direct-link interfaces.
     Links,
     /// Print USB-C Power Delivery and battery status.
@@ -55,6 +57,36 @@ enum Command {
     Reset,
     /// Remove all CableDesk state, including trusted devices (not yet implemented).
     Purge,
+    /// Development-only cable lifecycle simulation (requires `--features simulation`).
+    #[cfg(feature = "simulation")]
+    Simulate {
+        #[command(subcommand)]
+        event: SimulateEvent,
+    },
+}
+
+#[cfg(feature = "simulation")]
+#[derive(Subcommand, Clone, Copy)]
+enum SimulateEvent {
+    /// Run the full simulated cable-only lifecycle (insert → peer → stream → unplug).
+    Demo,
+    Usb4Controller,
+    CableInserted,
+    CableRemoved,
+    DirectInterfaceAdded,
+    DirectInterfaceRemoved,
+    PeerDiscovered,
+    /// Must reject: peer discovered on Wi-Fi.
+    PeerOnWifi,
+    PeerOnEthernet,
+    PeerTrusted,
+    IdentityMismatch,
+    Charging,
+    Discharging,
+    StreamStarted,
+    StreamFailed,
+    /// Print current simulated state.
+    Status,
 }
 
 fn print_checks(title: &str, checks: &[CompatibilityCheck], json: bool) {
@@ -98,12 +130,34 @@ fn not_implemented(command: &str) {
 )]
 trait Agent1 {
     async fn get_state(&self) -> zbus::Result<String>;
+    async fn get_session_json(&self) -> zbus::Result<String>;
+}
+
+#[zbus::proxy(
+    interface = "org.cabledesk.Helper1",
+    default_service = "org.cabledesk.Helper1",
+    default_path = "/org/cabledesk/Helper"
+)]
+trait Helper1 {
+    async fn prepare_direct_link(&self, interface_name: &str) -> zbus::Result<()>;
 }
 
 async fn query_agent_state() -> zbus::Result<String> {
     let connection = zbus::Connection::session().await?;
     let proxy = Agent1Proxy::new(&connection).await?;
     proxy.get_state().await
+}
+
+async fn query_agent_session_json() -> zbus::Result<String> {
+    let connection = zbus::Connection::session().await?;
+    let proxy = Agent1Proxy::new(&connection).await?;
+    proxy.get_session_json().await
+}
+
+async fn helper_prepare_direct_link(interface_name: &str) -> zbus::Result<()> {
+    let connection = zbus::Connection::system().await?;
+    let proxy = Helper1Proxy::new(&connection).await?;
+    proxy.prepare_direct_link(interface_name).await
 }
 
 #[tokio::main]
@@ -220,18 +274,38 @@ async fn main() -> std::process::ExitCode {
                 }
             }
         }
+        Command::Session => match query_agent_session_json().await {
+            Ok(json) => {
+                if cli.json {
+                    println!("{json}");
+                } else if let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) {
+                    println!("{}", serde_json::to_string_pretty(&value).unwrap_or(json));
+                } else {
+                    println!("{json}");
+                }
+            }
+            Err(e) => {
+                eprintln!("Failed to reach cabledesk-agent: {e}");
+                eprintln!(
+                    "Is cabledesk-agent.service running? (systemctl --user status cabledesk-agent)"
+                );
+                return std::process::ExitCode::FAILURE;
+            }
+        },
         Command::RepairNetwork => {
             match cabledesk_platform_fedora::detect_direct_link_interface_name().await {
                 Ok(Some(interface_name)) => {
                     println!("Found direct-link interface: {interface_name}");
                     println!(
-                        "Recreating the CableDesk NetworkManager profile and firewalld binding..."
+                        "Asking cabledesk-helper (Polkit) to recreate the NetworkManager profile..."
                     );
-                    let link = cabledesk_platform::DirectLink { interface_name };
-                    match backend.prepare_direct_link(&link).await {
+                    match helper_prepare_direct_link(&interface_name).await {
                         Ok(()) => println!("Done."),
                         Err(e) => {
-                            eprintln!("Failed to repair the direct-link network: {e}");
+                            eprintln!("Failed to repair via cabledesk-helper: {e}");
+                            eprintln!(
+                                "Is cabledesk-helper.service running? Polkit may prompt for auth."
+                            );
                             return std::process::ExitCode::FAILURE;
                         }
                     }
@@ -254,7 +328,156 @@ async fn main() -> std::process::ExitCode {
         Command::Logs => not_implemented("logs"),
         Command::Reset => not_implemented("reset"),
         Command::Purge => not_implemented("purge"),
+        #[cfg(feature = "simulation")]
+        Command::Simulate { event } => {
+            return run_simulate(event, cli.json);
+        }
     }
 
     std::process::ExitCode::SUCCESS
+}
+
+#[cfg(feature = "simulation")]
+fn run_simulate(event: SimulateEvent, json: bool) -> std::process::ExitCode {
+    use cabledesk_core::error::UserFacingError;
+    use cabledesk_network::simulation::{SimulateCommand, SimulatedWorld};
+
+    let path = std::env::temp_dir().join("cabledesk-sim-world.json");
+    let mut world = load_sim_world(&path);
+
+    let result = match event {
+        SimulateEvent::Demo => {
+            world = SimulatedWorld::new();
+            let steps = [
+                SimulateCommand::Usb4Controller,
+                SimulateCommand::CableInserted,
+                SimulateCommand::DirectInterfaceAdded,
+                SimulateCommand::PeerDiscovered,
+                SimulateCommand::PeerTrusted,
+                SimulateCommand::StreamStarted,
+                SimulateCommand::CableRemoved,
+            ];
+            for step in steps {
+                match world.apply(step) {
+                    Ok(msg) => println!("ok  {step:?}: {msg}"),
+                    Err(e) => {
+                        eprintln!("err {step:?}: {}", UserFacingError::from(&e).headline);
+                        return std::process::ExitCode::FAILURE;
+                    }
+                }
+            }
+            let mut mid = SimulatedWorld::new();
+            let _ = mid.apply(SimulateCommand::Usb4Controller);
+            let _ = mid.apply(SimulateCommand::CableInserted);
+            let _ = mid.apply(SimulateCommand::DirectInterfaceAdded);
+            match mid.apply(SimulateCommand::PeerOnWifi) {
+                Err(e) => {
+                    println!(
+                        "ok  PeerOnWifi rejected: {}",
+                        UserFacingError::from(&e).headline
+                    );
+                }
+                Ok(_) => {
+                    eprintln!("err PeerOnWifi was incorrectly accepted");
+                    return std::process::ExitCode::FAILURE;
+                }
+            }
+            println!(
+                "demo complete — final state {:?} (mock_stream_active={})",
+                world.state.current(),
+                world.mock_stream_active
+            );
+            save_sim_world(&path, &world);
+            return std::process::ExitCode::SUCCESS;
+        }
+        SimulateEvent::Status => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&world.to_snapshot()).unwrap()
+                );
+            } else {
+                println!("state: {:?}", world.state.current());
+                println!("cable_inserted: {}", world.cable_inserted);
+                println!("interface: {:?}", world.interface_name);
+                println!("mock_stream_active: {}", world.mock_stream_active);
+            }
+            return std::process::ExitCode::SUCCESS;
+        }
+        SimulateEvent::Usb4Controller => world.apply(SimulateCommand::Usb4Controller),
+        SimulateEvent::CableInserted => world.apply(SimulateCommand::CableInserted),
+        SimulateEvent::CableRemoved => world.apply(SimulateCommand::CableRemoved),
+        SimulateEvent::DirectInterfaceAdded => world.apply(SimulateCommand::DirectInterfaceAdded),
+        SimulateEvent::DirectInterfaceRemoved => {
+            world.apply(SimulateCommand::DirectInterfaceRemoved)
+        }
+        SimulateEvent::PeerDiscovered => world.apply(SimulateCommand::PeerDiscovered),
+        SimulateEvent::PeerOnWifi => world.apply(SimulateCommand::PeerOnWifi),
+        SimulateEvent::PeerOnEthernet => world.apply(SimulateCommand::PeerOnEthernet),
+        SimulateEvent::PeerTrusted => world.apply(SimulateCommand::PeerTrusted),
+        SimulateEvent::IdentityMismatch => world.apply(SimulateCommand::IdentityMismatch),
+        SimulateEvent::Charging => world.apply(SimulateCommand::Charging),
+        SimulateEvent::Discharging => world.apply(SimulateCommand::Discharging),
+        SimulateEvent::StreamStarted => world.apply(SimulateCommand::StreamStarted),
+        SimulateEvent::StreamFailed => world.apply(SimulateCommand::StreamFailed),
+    };
+
+    match result {
+        Ok(msg) => {
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "ok": true,
+                        "message": msg,
+                        "snapshot": world.to_snapshot(),
+                    })
+                );
+            } else {
+                println!("{msg}");
+                println!("state: {:?}", world.state.current());
+            }
+            save_sim_world(&path, &world);
+            std::process::ExitCode::SUCCESS
+        }
+        Err(e) => {
+            let uf = UserFacingError::from(&e);
+            if json {
+                println!(
+                    "{}",
+                    serde_json::json!({
+                        "ok": false,
+                        "headline": uf.headline,
+                        "detail": uf.detail,
+                    })
+                );
+            } else {
+                eprintln!("{}", uf.headline);
+                if let Some(detail) = uf.detail {
+                    eprintln!("{detail}");
+                }
+            }
+            save_sim_world(&path, &world);
+            std::process::ExitCode::FAILURE
+        }
+    }
+}
+
+#[cfg(feature = "simulation")]
+fn load_sim_world(path: &std::path::Path) -> cabledesk_network::simulation::SimulatedWorld {
+    use cabledesk_network::simulation::{SimSnapshot, SimulatedWorld};
+    match std::fs::read_to_string(path) {
+        Ok(text) => match serde_json::from_str::<SimSnapshot>(&text) {
+            Ok(snap) => SimulatedWorld::from_snapshot(snap),
+            Err(_) => SimulatedWorld::new(),
+        },
+        Err(_) => SimulatedWorld::new(),
+    }
+}
+
+#[cfg(feature = "simulation")]
+fn save_sim_world(path: &std::path::Path, world: &cabledesk_network::simulation::SimulatedWorld) {
+    if let Ok(text) = serde_json::to_string_pretty(&world.to_snapshot()) {
+        let _ = std::fs::write(path, text);
+    }
 }

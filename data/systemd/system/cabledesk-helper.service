@@ -1,6 +1,6 @@
 [Unit]
 Description=CableDesk privileged system helper
-Documentation=https://github.com/cabledesk/cabledesk
+Documentation=https://github.com/loafdaddy/CableDesk
 After=dbus.service NetworkManager.service
 Wants=NetworkManager.service
 

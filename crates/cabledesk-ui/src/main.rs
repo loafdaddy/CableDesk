@@ -1,9 +1,8 @@
 //! CableDesk GTK4/libadwaita application.
 //!
-//! This first milestone only renders read-only compatibility information
-//! (see docs/ROADMAP.md, Phase 1). It does not yet drive pairing,
-//! networking or streaming — the state machine in `cabledesk-core` will
-//! back those once the agent exists (Phase 2+).
+//! Shows read-only compatibility information and the live agent session
+//! state (`GetState` / `GetSessionJson` on the session bus). Pairing and
+//! streaming UI are not implemented yet.
 
 use cabledesk_platform::{CheckStatus, CompatibilityCheck, PlatformBackend};
 use cabledesk_platform_fedora::FedoraBackend;
@@ -14,6 +13,16 @@ use libadwaita as adw;
 use adw::prelude::*;
 
 const APP_ID: &str = "org.cabledesk.CableDesk";
+
+#[zbus::proxy(
+    interface = "org.cabledesk.Agent1",
+    default_service = "org.cabledesk.Agent1",
+    default_path = "/org/cabledesk/Agent"
+)]
+trait Agent1 {
+    async fn get_state(&self) -> zbus::Result<String>;
+    async fn get_session_json(&self) -> zbus::Result<String>;
+}
 
 fn main() -> glib::ExitCode {
     tracing_subscriber::fmt().init();
@@ -28,7 +37,7 @@ fn build_ui(app: &adw::Application) {
         .application(app)
         .title("CableDesk")
         .default_width(480)
-        .default_height(680)
+        .default_height(720)
         .build();
 
     let header = adw::HeaderBar::new();
@@ -46,12 +55,33 @@ fn build_ui(app: &adw::Application) {
     content.append(&status_label);
 
     let subtitle_label = gtk::Label::new(Some(
-        "An ordinary USB-C connector alone does not guarantee CableDesk compatibility.",
+        "CableDesk requires a compatible direct USB4 or Thunderbolt cable.",
     ));
     subtitle_label.add_css_class("dim-label");
     subtitle_label.set_wrap(true);
     subtitle_label.set_xalign(0.0);
     content.append(&subtitle_label);
+
+    let session_group = adw::PreferencesGroup::builder()
+        .title("Session")
+        .description("Live state from cabledesk-agent (cable-only)")
+        .build();
+    let agent_state_row = adw::ActionRow::builder()
+        .title("Agent state")
+        .subtitle("Connecting…")
+        .build();
+    let agent_link_row = adw::ActionRow::builder()
+        .title("Direct interface")
+        .subtitle("—")
+        .build();
+    let agent_peer_row = adw::ActionRow::builder()
+        .title("Validated peer")
+        .subtitle("—")
+        .build();
+    session_group.add(&agent_state_row);
+    session_group.add(&agent_link_row);
+    session_group.add(&agent_peer_row);
+    content.append(&session_group);
 
     let system_group = adw::PreferencesGroup::builder()
         .title("System")
@@ -89,13 +119,9 @@ fn build_ui(app: &adw::Application) {
     window.present();
 
     spawn_compatibility_check(status_label, system_group, link_group, power_group);
+    spawn_agent_poll(agent_state_row, agent_link_row, agent_peer_row);
 }
 
-/// Runs [`FedoraBackend::collect_diagnostics`] on a background thread with
-/// its own Tokio runtime (the platform backend uses `tokio::fs` and `zbus`,
-/// neither of which the GTK main loop drives), then hands the result back to
-/// the GLib main context to update widgets. GTK widgets are not `Send`, so
-/// this hand-off — not direct cross-thread mutation — is required.
 fn spawn_compatibility_check(
     status_label: gtk::Label,
     system_group: adw::PreferencesGroup,
@@ -152,6 +178,88 @@ fn spawn_compatibility_check(
             }
         }
     });
+}
+
+/// Polls the agent every 2s so testers can watch cable insert/remove without
+/// a StateChanged signal yet.
+fn spawn_agent_poll(state_row: adw::ActionRow, link_row: adw::ActionRow, peer_row: adw::ActionRow) {
+    let (tx, rx) = async_channel::bounded(1);
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Runtime::new().expect("failed to start tokio runtime");
+        runtime.block_on(async move {
+            loop {
+                let payload = match query_agent_session().await {
+                    Ok(json) => json,
+                    Err(e) => serde_json::json!({
+                        "state": "Agent unavailable",
+                        "last_error": e,
+                        "interface": serde_json::Value::Null,
+                        "last_peer_address": serde_json::Value::Null,
+                    })
+                    .to_string(),
+                };
+                if tx.send(payload).await.is_err() {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+        });
+    });
+
+    glib::MainContext::default().spawn_local(async move {
+        while let Ok(json) = rx.recv().await {
+            let value: serde_json::Value =
+                serde_json::from_str(&json).unwrap_or_else(|_| serde_json::json!({}));
+            let state = value
+                .get("state")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown");
+            state_row.set_subtitle(state);
+
+            let iface = value
+                .get("interface")
+                .and_then(|v| v.as_str())
+                .unwrap_or("No direct cable connection");
+            let driver = value.get("driver").and_then(|v| v.as_str()).unwrap_or("");
+            if driver.is_empty() {
+                link_row.set_subtitle(iface);
+            } else {
+                let text = format!("{iface} ({driver})");
+                link_row.set_subtitle(&text);
+            }
+
+            let peer = value
+                .get("last_peer_address")
+                .and_then(|v| v.as_str())
+                .unwrap_or("—");
+            let peer_name = value
+                .get("last_peer_name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            if peer_name.is_empty() {
+                peer_row.set_subtitle(peer);
+            } else {
+                let text = format!("{peer} ({peer_name})");
+                peer_row.set_subtitle(&text);
+            }
+
+            if (state == "WaitingForCable" || state == "Agent unavailable")
+                && value.get("interface").and_then(|v| v.as_str()).is_none()
+            {
+                link_row.set_subtitle("No direct cable connection");
+            }
+        }
+    });
+}
+
+async fn query_agent_session() -> Result<String, String> {
+    let connection = zbus::Connection::session()
+        .await
+        .map_err(|e| e.to_string())?;
+    let proxy = Agent1Proxy::new(&connection)
+        .await
+        .map_err(|e| e.to_string())?;
+    proxy.get_session_json().await.map_err(|e| e.to_string())
 }
 
 fn check_row(check: &CompatibilityCheck) -> adw::ActionRow {

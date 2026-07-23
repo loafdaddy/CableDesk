@@ -16,3 +16,9 @@ futures-util.workspace = true
 nix.workspace = true
 rtnetlink.workspace = true
 tracing.workspace = true
+serde = { workspace = true }
+
+[features]
+default = []
+## Development-only simulated cable lifecycle. Never enable in production packages.
+simulation = []

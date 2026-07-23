@@ -133,6 +133,14 @@ impl StateMachine {
         self.current = next;
         Ok(self.current)
     }
+
+    /// Restore a machine at `current` without history (simulation / tests).
+    pub fn restored(current: ConnectionState) -> Self {
+        Self {
+            current,
+            history: Vec::new(),
+        }
+    }
 }
 
 #[cfg(test)]

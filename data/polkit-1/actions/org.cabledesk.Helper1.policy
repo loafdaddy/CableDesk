@@ -1,27 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE policyconfig PUBLIC
  "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
- "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+ "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
 <!--
-  Placeholder Polkit actions for cabledesk-helper.
+  Polkit actions for cabledesk-helper.
 
-  None of these are wired up to an implemented D-Bus method yet — see
-  org.cabledesk.Helper1.xml, where the corresponding methods are commented
-  out pending Phase 2/3 (docs/ROADMAP.md). They are defined here now so the
-  action IDs are stable and reviewable from the start, per docs/SECURITY.md
-  ("Polkit interaction must be triggered by a clear user action").
-
-  `auth_admin_keep` is a starting-point default, not a final decision: it
-  means a user is prompted for an administrator password once per session
-  and it is cached briefly. Whether these specific actions warrant
-  `auth_self_keep` (the *user's own* password, appropriate since CableDesk
-  is a single-user workstation feature, not a multi-user admin operation)
-  should be revisited in docs/SECURITY.md before Phase 2 ships — see
-  docs/OPEN_QUESTIONS.md.
+  PrepareDirectLink is wired to a real D-Bus method and performs
+  CheckAuthorization on every call. Remaining actions stay reserved for
+  later mutating methods.
 -->
 <policyconfig>
   <vendor>CableDesk</vendor>
-  <vendor_url>https://github.com/cabledesk/cabledesk</vendor_url>
+  <vendor_url>https://github.com/loafdaddy/CableDesk</vendor_url>
 
   <action id="org.cabledesk.helper.load-thunderbolt-module">
     <description>Load the thunderbolt-net kernel module</description>

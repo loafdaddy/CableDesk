@@ -136,10 +136,13 @@ name = "cabledesk-agent"
 version = "0.1.0"
 dependencies = [
  "cabledesk-core",
+ "cabledesk-discovery",
  "cabledesk-network",
  "cabledesk-platform",
  "cabledesk-platform-fedora",
  "futures-util",
+ "serde",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-journald",
@@ -180,6 +183,7 @@ name = "cabledesk-helper"
 version = "0.1.0"
 dependencies = [
  "cabledesk-core",
+ "cabledesk-network",
  "cabledesk-platform",
  "cabledesk-platform-fedora",
  "serde_json",
@@ -198,6 +202,7 @@ dependencies = [
  "futures-util",
  "nix 0.31.3",
  "rtnetlink",
+ "serde",
  "tokio",
  "tracing",
  "zbus",
@@ -256,9 +261,11 @@ dependencies = [
  "cabledesk-platform-fedora",
  "gtk4",
  "libadwaita",
+ "serde_json",
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "zbus",
 ]
 
 [[package]]
@@ -266,6 +273,7 @@ name = "cabledeskctl"
 version = "0.1.0"
 dependencies = [
  "cabledesk-core",
+ "cabledesk-network",
  "cabledesk-platform",
  "cabledesk-platform-fedora",
  "clap",
