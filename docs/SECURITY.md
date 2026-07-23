@@ -28,14 +28,29 @@ they derive from in the project's own planning notes:
 - **The GTK UI never runs as root.** Enforced structurally: `cabledesk-ui`
   has no privileged code path at all; every privileged operation lives only
   in `cabledesk-helper`.
-- **Privileged code stays small and independently reviewable.** This
-  milestone's entire privileged surface is `crates/cabledesk-helper`
-  (three D-Bus methods: `Version`, `Ping`, `CollectDiagnosticsJson`, none
-  of which mutate anything).
+- **Privileged code stays small and independently reviewable.** Privileged
+  surface is `crates/cabledesk-helper`: read-only `Version` / `Ping` /
+  `CollectDiagnosticsJson`, plus mutating `PrepareDirectLink` (Polkit
+  `org.cabledesk.helper.prepare-direct-link` on every call; rejects
+  non-direct interfaces).
 - **No disabling SELinux or firewalld, ever**, including in development
   tooling — see `scripts/dev-setup.sh`, which only ever reports their
   status, never changes it.
-- **No silent fallback to Wi-Fi** — see `docs/THREAT_MODEL.md` T3.
+- **No silent fallback to Wi-Fi or Ethernet** — see `docs/THREAT_MODEL.md` T3
+  and the cable-only invariants in `docs/ARCHITECTURE.md`. Wrong-interface
+  peers must fail with `PeerNotOnDirectCable` / “No direct cable connection”.
+
+### Cable-only invariants (enforcement status)
+
+| # | Invariant | Software today |
+|---|-----------|----------------|
+| 1–4 | Direct USB4/TB interface required; driver evidence; peer on that iface | `classify` / `sysfs` + `PreparedDirectLink` / `validate_cable_peer` |
+| 5 | Discovery scoped to direct interface | Agent Avahi publish/browse on direct ifindex |
+| 6–8 | Control/Sunshine/Moonlight bound to validated cable endpoint | Not built (Phases 3–4) |
+| 9–10 | Cable removal ends session; no Wi-Fi/Ethernet retry | Agent tear-down → `WaitingForCable`; sim proves unplug |
+| 11–12 | Trusted-on-LAN / manual IP rejected | Policy + sim; no production manual-IP API |
+
+Full table: `docs/ARCHITECTURE.md` § Cable-only invariants.
 
 ## Device identity and pairing (not implemented yet)
 
@@ -76,35 +91,28 @@ Three processes, matching `docs/ARCHITECTURE.md`:
   perform its own `org.freedesktop.PolicyKit1.Authority.CheckAuthorization`
   call against an action ID in `data/polkit-1/actions/` before doing
   anything (see engineering rule: Polkit checks triggered by clear user
-  action, never blocking the GTK main thread). **This milestone's helper
-  still implements zero privileged actions of its own** — `Version`,
-  `Ping`, `CollectDiagnosticsJson` only.
+  action, never blocking the GTK main thread). **Implemented mutating
+  method:** `PrepareDirectLink` (action
+  `org.cabledesk.helper.prepare-direct-link`). Read-only methods
+  (`Version`, `Ping`, `CollectDiagnosticsJson`) stay unauthenticated.
 
-### An architectural gap this milestone surfaced, not yet closed
+### PrepareDirectLink authorization (closed for this path)
 
-`prepare_direct_link` and `install_firewall_policy` (in
-`cabledesk-platform-fedora`) are real, working, mutating code as of
-Phase 2 — but they are called directly by `cabledeskctl repair-network`,
-which runs as the logged-in **user**, not through `cabledesk-helper` at
-all. This works today only because NetworkManager and firewalld each
-enforce **their own** Polkit authorization for the calling user
-independently of CableDesk (a normal desktop user is typically already
-authorized by NM's/firewalld's own policy to manage connections/zones at
-the seat). That is real defense-in-depth from those two services, but it
-means **none of CableDesk's own reserved Polkit actions
-(`org.cabledesk.helper.prepare-direct-link`,
-`org.cabledesk.helper.install-firewall-policy`, in
-`data/polkit-1/actions/org.cabledesk.Helper1.policy`) are wired up or
-enforced anywhere yet** — they exist as unused reservations, not active
-gates. Before this path is relied on for anything more sensitive than a
-development CLI, either route it through `cabledesk-helper` with a real
-`CheckAuthorization` call, or make a deliberate, documented decision that
-NM's/firewalld's own authorization is sufficient and CableDesk's
-reserved actions for these two specific operations can be retired. Not
-deciding is itself a decision here, so it's tracked explicitly in
-`docs/OPEN_QUESTIONS.md` rather than left implicit.
+`cabledeskctl repair-network` and `cabledesk-agent` call helper
+`PrepareDirectLink` over the system bus. The helper:
 
-### A concrete finding from this milestone
+1. Runs Polkit `CheckAuthorization` for
+   `org.cabledesk.helper.prepare-direct-link` (AllowUserInteraction).
+2. Rejects interface names that are not USB4/Thunderbolt-derived
+   (`require_direct_cable_interface`).
+3. Then runs `FedoraBackend::prepare_direct_link` (NM profile + firewalld
+   zone bind).
+
+Remaining reserved Polkit actions (`load-thunderbolt-module`,
+`install-firewall-policy`, `repair-network-profile`) are still unused —
+implement or retire deliberately (see `docs/OPEN_QUESTIONS.md` §32).
+
+### A concrete finding from earlier milestones
 
 Getting `cabledesk-helper` to even start on the system bus required adding
 `data/dbus-1/system.d/org.cabledesk.Helper1.conf` — verified by hands-on
@@ -165,13 +173,8 @@ reports SELinux/firewalld status; it never changes either.
   `data/polkit-1/actions/org.cabledesk.Helper1.policy` are a starting
   point (`auth_admin_keep`), not a reviewed final decision — see that
   file's own comment and `docs/OPEN_QUESTIONS.md`.
-- **CableDesk's own Polkit actions are currently unused** — see "An
-  architectural gap this milestone surfaced" above. The direct-link
-  mutating operations (`prepare_direct_link`, `install_firewall_policy`)
-  run today as the logged-in user via `cabledeskctl`, relying entirely on
-  NetworkManager's and firewalld's own authorization, not CableDesk's.
-- Phase 2's networking/discovery code (`cabledesk-network`,
-  `cabledesk-discovery`) has never run against real Thunderbolt/USB4
-  hardware or a second machine — everything verified so far is against
-  one development machine's own NetworkManager/Avahi/firewalld/routing
-  table. See `docs/TEST_PLAN.md` and `docs/OPEN_QUESTIONS.md` items 26–30.
+- **`PrepareDirectLink` is Polkit-gated;** other reserved helper actions
+  remain unused (OPEN_QUESTIONS §32).
+- Phase 2 networking/discovery has never run against real
+  Thunderbolt/USB4 hardware or a second machine — see
+  `docs/HARDWARE_TEST_PLAN.md` and `docs/TEST_PLAN.md`.

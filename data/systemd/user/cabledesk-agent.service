@@ -1,6 +1,6 @@
 [Unit]
 Description=CableDesk user-session agent
-Documentation=https://github.com/cabledesk/cabledesk
+Documentation=https://github.com/loafdaddy/CableDesk
 # The agent needs a graphical session to matter (no point running before
 # login) but does not itself draw anything.
 PartOf=graphical-session.target

@@ -24,6 +24,12 @@ pub enum CableDeskError {
     #[error("the direct cable connection was lost")]
     LinkLost,
 
+    #[error("no direct cable connection")]
+    NoDirectCableConnection,
+
+    #[error("peer was not discovered or reachable through the direct cable interface")]
+    PeerNotOnDirectCable,
+
     #[error("hardware video encoding is unavailable")]
     NoHardwareEncoder,
 
@@ -89,7 +95,14 @@ impl From<&CableDeskError> for UserFacingError {
             ),
             CableDeskError::LinkLost => UserFacingError::with_detail(
                 "The direct cable connection was lost.",
-                "CableDesk did not fall back to Wi-Fi.",
+                "CableDesk did not fall back to Wi-Fi or Ethernet.",
+            ),
+            CableDeskError::NoDirectCableConnection => {
+                UserFacingError::new("No direct cable connection")
+            }
+            CableDeskError::PeerNotOnDirectCable => UserFacingError::with_detail(
+                "Peer rejected because it was not discovered through the direct cable interface.",
+                "CableDesk does not connect over Wi-Fi, Ethernet, or any other route.",
             ),
             CableDeskError::NoHardwareEncoder => UserFacingError::with_detail(
                 "Hardware video encoding is unavailable.",
@@ -134,6 +147,8 @@ mod tests {
             CableDeskError::DirectInterfaceMissing,
             CableDeskError::UntrustedPeerIdentity,
             CableDeskError::LinkLost,
+            CableDeskError::NoDirectCableConnection,
+            CableDeskError::PeerNotOnDirectCable,
             CableDeskError::NoHardwareEncoder,
             CableDeskError::MissingDependency("sunshine".into()),
         ];

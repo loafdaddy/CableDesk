@@ -6,9 +6,14 @@ rest is the plan those future tests need to fill in.
 
 ## Unit tests (implemented, this milestone)
 
-All in `cargo test --workspace`, 39 tests passing as of this milestone
-(14 in `cabledesk-core`, 12 in `cabledesk-network`, 6 in
-`cabledesk-discovery`, 7 in `cabledesk-platform-fedora`):
+All in `cargo test --workspace`, plus optional simulation tests:
+
+`cargo test --workspace` (default features) and
+`cargo test -p cabledesk-network --features simulation`.
+
+Counts evolve; re-run the commands rather than trusting a fixed number here.
+As of 2026-07-23: core + network (with simulation) + discovery +
+platform-fedora unit/live-safe tests all pass.
 
 - **State transitions** (`cabledesk-core/src/state.rs`, 5 tests): starts
   `Unconfigured`; a full happy-path walk to `Streaming`; illegal jumps are
@@ -68,6 +73,34 @@ All in `cargo test --workspace`, 39 tests passing as of this milestone
   contain anything key/secret/token/password-shaped.
 
 Run with: `cargo test --workspace` (see `scripts/dev-build.sh`).
+
+## Simulation / cable-only lifecycle (development-only)
+
+Enabled only with Cargo feature `simulation` (never in production packages).
+Production binaries and the privileged helper must not expose sim events.
+
+```bash
+cargo test -p cabledesk-network --features simulation
+cargo run -p cabledeskctl --features simulation -- simulate demo
+cargo run -p cabledeskctl --features simulation -- simulate peer-on-wifi
+```
+
+Covered by unit tests in `cabledesk-network/src/{simulation,classify,peer,sysfs}.rs`
+and agent state-bridge tests:
+
+- WaitingForCable → mock USB4 cable → direct iface → peer on cable →
+  mock stream → cable removed → WaitingForCable
+- Peer discovered on Wi-Fi or ordinary Ethernet is rejected
+- No direct interface → “No direct cable connection”
+- Cable loss from mid-orchestration states returns to WaitingForCable
+
+## Agent / helper / UI (software, no TB required)
+
+- Agent unit tests: force-waiting bridge; Wi-Fi policy rejection
+- Manual: `cargo run -p cabledesk-agent` then `cabledeskctl session`
+  (expects `WaitingForCable` without a thunderbolt-net iface)
+- Helper `PrepareDirectLink` is exercised only when a direct iface exists
+  and Polkit authorizes (not automated in `cargo test`)
 
 ## Live-but-safe Phase 2 tests
 
@@ -155,16 +188,14 @@ the session bus successfully. `cabledesk-helper` was started and correctly
 failed to acquire its system-bus name until the D-Bus policy file was
 added — see `docs/SECURITY.md`.
 
-**Not performed, planned for later phases:** the full real-hardware matrix
-from the project plan — AMD↔NVIDIA controller/host pairs, actual USB4/
-Thunderbolt hardware on both ends, simultaneous Wi-Fi+Ethernet+direct-link,
-1080p60/native-resolution/120fps streaming, H.264/HEVC/AV1, keyboard/mouse/
-Alt+Tab forwarding, cable removal during an active stream, reboot,
-suspend/resume, charging vs. discharging under a real stream, and
-distinguishing "USB4 cable" vs. "charge-only cable" vs. "ordinary USB-C
-cable" behaviour. None of this is possible to test yet because streaming
-doesn't exist. Every item here needs two physical machines connected by a
-real cable, which this milestone's environment did not have.
+**Not performed, planned for later phases:** see
+`docs/HARDWARE_TEST_PLAN.md` (all items deferred — not failed). The full
+real-hardware matrix from the project plan — AMD↔NVIDIA controller/host
+pairs, actual USB4/Thunderbolt hardware on both ends, simultaneous
+Wi-Fi+Ethernet+direct-link, streaming quality/latency, input forwarding,
+cable removal during an active stream, reboot, suspend/resume, charging
+under load, and distinguishing USB4 vs charge-only vs ordinary USB-C
+cables — remains deferred. None of this is claimed working.
 
 ## Cross-distribution CI (not implemented yet)
 

@@ -39,20 +39,13 @@ runs more code than it has to:
 
 | Binary | Runs as | Bus | Status this milestone |
 |---|---|---|---|
-| `cabledesk` (`crates/cabledesk-ui`) | logged-in user | — (D-Bus client, not yet) | Displays read-only compatibility info by calling `PlatformBackend` directly in-process |
-| `cabledeskctl` (`crates/cabledeskctl`) | logged-in user | session (client, for `status`) | Diagnostics/dev CLI; `compatibility`, `diagnostics`, `power`, `links`, `status`, `repair-network` are implemented, everything else prints "not implemented in this milestone" |
-| `cabledesk-agent` (`crates/cabledesk-agent`) | logged-in user, `systemd --user` | session, `org.cabledesk.Agent1` | Real hotplug wiring (Phase 2): watches `cabledesk_network::NetworkManagerClient::watch_direct_link_events` and drives the shared `StateMachine` — `WaitingForCable` on startup, `CableDetected` when the direct-link interface appears, back to `WaitingForCable` the instant it disappears. `GetState` reflects this live (verified: queried over the real session bus, got `WaitingForCable` back) |
-| `cabledesk-helper` (`crates/cabledesk-helper`) | root, system `systemd` service | system, `org.cabledesk.Helper1` | Exposes `Version`, `Ping`, `CollectDiagnosticsJson`. Its `PlatformBackend` (`FedoraBackend`) now has real `prepare_direct_link`/`install_firewall_policy` implementations (Phase 2) — see below — but this binary has no D-Bus method that calls them yet; they're reachable today only via direct Rust calls (`cabledeskctl repair-network` does this today, from a separate process, not through the helper's own D-Bus surface) |
+| `cabledesk` (`crates/cabledesk-ui`) | logged-in user | session client of `Agent1` | Compatibility via in-process `PlatformBackend`; Session panel polls `GetSessionJson` every 2s |
+| `cabledeskctl` (`crates/cabledeskctl`) | logged-in user | session + system (client) | `compatibility`, `diagnostics`, `power`, `links`, `status`, `session`, `repair-network` (helper); simulation behind Cargo feature; other subcommands stubbed |
+| `cabledesk-agent` (`crates/cabledesk-agent`) | logged-in user, `systemd --user` | session, `org.cabledesk.Agent1` | Hotplug → helper prepare → Avahi → `validate_cable_peer` → `PairingRequired`; cable loss → `WaitingForCable`. D-Bus: `GetState`, `GetSessionJson` |
+| `cabledesk-helper` (`crates/cabledesk-helper`) | root, system `systemd` service | system, `org.cabledesk.Helper1` | `Version`, `Ping`, `CollectDiagnosticsJson`; Polkit-gated `PrepareDirectLink` (rejects non-direct ifaces, then NM + firewalld bind) |
 
-**Why `cabledesk` doesn't yet talk to `cabledesk-agent` over D-Bus:** this
-milestone's GUI only needs read-only compatibility data, which
-`cabledesk-platform-fedora` can provide directly and cheaply. Routing it
-through the agent's D-Bus API first would add a hop with no present benefit.
-`cabledeskctl status` already demonstrates the intended pattern (a
-separate process reading `cabledesk-agent`'s real `GetState`) — the GTK UI
-should switch to the same approach once it needs live connection-progress
-state, rather than duplicating detection logic — tracked in
-`docs/ROADMAP.md` Phase 3+.
+The GTK UI already reads live agent session state over D-Bus. Compatibility
+checks still call `PlatformBackend` in-process (cheap, no agent required).
 
 ## Shared crates
 
@@ -169,16 +162,40 @@ The GTK UI runs this on a background thread with its own Tokio runtime
 result back via an `async-channel`, since GTK widgets are not `Send` — see
 `crates/cabledesk-ui/src/main.rs` for the full rationale in comments.
 
+## Cable-only invariants
+
+CableDesk is a **strictly cable-only** product. The only supported transport is
+a direct USB4/Thunderbolt cable between two Linux machines. Wi-Fi, ordinary
+Ethernet, router LAN, VPN, Tailscale/ZeroTier, manual IP entry, and any
+silent fallback are **out of product scope**.
+
+| # | Invariant |
+|---|-----------|
+| 1 | No session begins without an active USB4/Thunderbolt-derived interface |
+| 2 | Peer endpoint must belong to that direct interface |
+| 3 | Kernel route to the peer must resolve through that interface |
+| 4 | Direct interface must be associated with USB4/Thunderbolt driver evidence (never name alone) |
+| 5 | Discovery must be scoped to the direct interface |
+| 6 | Control channel must bind to the direct link |
+| 7 | Managed Sunshine must be inaccessible from unrelated interfaces |
+| 8 | Moonlight receives only a validated cable endpoint |
+| 9 | Cable removal invalidates the session immediately |
+| 10 | No retry through Wi-Fi, Ethernet, or another route |
+| 11 | A previously paired device on normal LAN is rejected |
+| 12 | Manual IP addresses are not accepted by the normal application |
+
+Software enforcement today: `cabledesk-network::{classify, peer, validate,
+sysfs}`, agent Avahi scoped to the direct ifindex + `validate_cable_peer`,
+agent cable-loss → `WaitingForCable`, helper rejects non-direct ifaces,
+NM `never-default` profile. Simulation: `cabledesk-network` feature
+`simulation`. Hardware verification: deferred (`docs/HARDWARE_TEST_PLAN.md`).
+
 ## What is explicitly *not* built yet
 
-Pairing, managed Sunshine/Moonlight runtimes, the streaming session
-itself, clipboard sync, and suspend/logind integration are not built at
-all. Phase 2 (direct-link NetworkManager profile, hotplug detection, mDNS
-discovery, route validation, firewalld integration) is code-complete and
-wired into `cabledesk-agent`'s state machine, but — critically — **has
-never been exercised against real Thunderbolt/USB4 hardware or a second
-machine**, only against this one machine's live
-NetworkManager/Avahi/firewalld/routing table for the parts that are safe
-to test that way (see `docs/TEST_PLAN.md`). See `docs/ROADMAP.md` for the
-phase each remaining piece belongs to, and `docs/OPEN_QUESTIONS.md` for
-what's still unresolved even at the research level.
+Pairing crypto/UI, managed Sunshine/Moonlight, the streaming session,
+clipboard sync, and suspend/logind integration are not built. Phase 2
+software orchestration (hotplug → prepare → Avahi → peer validation →
+`PairingRequired`) is implemented and unit/simulation-tested, but **has
+not** been exercised against real Thunderbolt/USB4 hardware or a second
+machine (see `docs/TEST_PLAN.md`, `docs/CURRENT_STATUS.md`,
+`docs/HARDWARE_TEST_PLAN.md`).

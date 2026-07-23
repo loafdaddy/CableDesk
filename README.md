@@ -17,6 +17,8 @@
 </p>
 
 <p align="center">
+  <a href="docs/CURRENT_STATUS.md">Status</a>
+  ·
   <a href="docs/ROADMAP.md">Roadmap</a>
   ·
   <a href="docs/ARCHITECTURE.md">Architecture</a>
@@ -29,17 +31,13 @@
 </p>
 
 > **Experimental — not ready for daily use.**
-> Compatibility detection and the direct-link networking/discovery
-> layer (NetworkManager profile, hotplug detection, mDNS) are implemented
-> and unit-tested, but **have never been exercised against real
-> Thunderbolt/USB4 hardware or a second machine** — only against one
-> development machine's own NetworkManager/Avahi/firewalld. Pairing and
-> desktop streaming are **not implemented at all**. Nothing in this
-> milestone opens a stream, pairs with another device, or mutates your
-> real network/firewall configuration outside of a deliberate,
-> explicitly-confirmed action. See [docs/ROADMAP.md](docs/ROADMAP.md) for
-> exactly what's done versus planned, and
-> [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) for open gaps.
+> Compatibility detection and the direct-link networking/discovery stack
+> (NetworkManager profile, hotplug, Avahi, peer validation, Polkit prepare)
+> are implemented and unit/simulation-tested, but **have never been
+> exercised against real Thunderbolt/USB4 hardware or a second machine**.
+> Pairing and desktop streaming are **not implemented**. See
+> [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md) and
+> [docs/ROADMAP.md](docs/ROADMAP.md).
 
 CableDesk connects two Linux computers over a direct USB4 or Thunderbolt
 cable and aims to provide a near-local desktop-control experience — plug in
@@ -64,42 +62,36 @@ Wayland-first, Polkit/SELinux-aware, no Electron.
 > mean USB4 or Thunderbolt. CableDesk will tell you when the hardware isn't
 > compatible instead of assuming it from the connector shape.
 
-## Current status (Phase 2 of 7 — see docs/ROADMAP.md)
+## Current status (Phase 2 of 7)
 
-### Done
+Authoritative board: [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md) ·
+[docs/ROADMAP.md](docs/ROADMAP.md).
 
-- Cargo workspace with core types, error model, and connection state machine
-- Distro-independent `PlatformBackend` + read-only Fedora backend
-  (controllers, `thunderbolt-net`, SELinux/firewalld, USB-C PD/battery)
-- Minimal libadwaita GUI (`cabledesk`) and diagnostics CLI (`cabledeskctl`)
-- `cabledesk-agent` really watches NetworkManager for the direct-link
-  interface and drives the connection state machine (`WaitingForCable` →
-  `CableDetected` and back on cable removal) — verified live via
-  `cabledeskctl status`
-- `cabledesk-network`: NetworkManager profile creation, hotplug detection,
-  address *and* route-table validation (a real kernel FIB lookup)
-- `cabledesk-discovery`: mDNS publish/browse/resolve for `_cabledesk._tcp`,
-  verified with a real live publish→resolve→withdraw round trip
-- `cabledesk-helper`'s `prepare_direct_link`/`install_firewall_policy` are
-  real (not stubs) — deliberately never exercised against a live system
-  in this repo's own tests, since doing so would mutate real network
-  config (see `docs/TEST_PLAN.md`)
-- `cabledeskctl repair-network`/`status` work for real
+### Done (software)
+
+- Cargo workspace, state machine, cable-only error model
+- Fedora `PlatformBackend` + NM/Avahi/route/classify/peer libraries
+- Development-only simulation (`cabledeskctl simulate`, Cargo feature)
+- Agent: hotplug → helper prepare → Avahi → `validate_cable_peer` →
+  `PairingRequired`; cable loss returns to `WaitingForCable`
+- Helper: Polkit-gated `PrepareDirectLink` (rejects non-direct ifaces)
+- CLI: `compatibility`, `status`, `session`, `repair-network`, …
+- GTK UI: compatibility groups + live Session panel
 - Packaging scaffolding (RPM spec, systemd, Polkit, firewalld zone)
 
 ### Not done yet
 
-- **Never tested against real Thunderbolt/USB4 hardware or a second
-  machine** — the single biggest gap, and the next recommended step
-  (`docs/ROADMAP.md`, "Immediate next task recommendation")
-- Pairing (Phase 3): no device identity, crypto, or trust storage yet
-- Streaming (Phase 4): no managed Sunshine/Moonlight, no desktop stream
-- Plug-and-play polish (Phase 5): notifications, clipboard, suspend
-  handling, presets
+- **Physical USB4/Thunderbolt / two-machine validation**
+  ([docs/HARDWARE_TEST_PLAN.md](docs/HARDWARE_TEST_PLAN.md))
+- Pairing (Phase 3), streaming (Phase 4), polish (Phase 5)
+- RPM/`rpmlint` build verification
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the full phase-by-phase
-breakdown and [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) for the
-current list of unresolved items.
+```bash
+cargo run -p cabledeskctl --features simulation -- simulate demo
+cargo run -p cabledesk-agent &
+cargo run -p cabledeskctl -- session
+```
+
 
 ## Supported systems
 
@@ -123,19 +115,24 @@ cd CableDesk
 
 ```bash
 cabledeskctl compatibility   # hardware/compatibility report
-cabledesk                    # read-only GTK UI
-systemctl --user start cabledesk-agent   # start the background agent
-cabledeskctl status          # query the agent's real connection state
-cabledeskctl repair-network  # recreate the NetworkManager profile/firewalld
-                              # binding for the detected direct-link interface,
-                              # or report honestly that none is present
+cabledesk                    # GTK UI (compatibility + live Session)
+systemctl --user start cabledesk-agent   # background agent
+cabledeskctl status          # connection state
+cabledeskctl session         # JSON session snapshot (iface, peer, errors)
+cabledeskctl repair-network  # Polkit-gated prepare via cabledesk-helper
 ./scripts/dev-uninstall.sh   # remove what the scripts installed
+```
+
+```bash
+# Development-only simulation (never enable in production packages)
+cargo run -p cabledeskctl --features simulation -- simulate demo
 ```
 
 ## Documentation
 
 | Doc | What it covers |
 |-----|----------------|
+| [docs/PROJECT_PLAN.md](docs/PROJECT_PLAN.md) | Goals, phases, non-goals |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Component layout and data flow |
 | [docs/SECURITY.md](docs/SECURITY.md) / [docs/THREAT_MODEL.md](docs/THREAT_MODEL.md) | Security model |
 | [docs/NETWORKING.md](docs/NETWORKING.md) | `thunderbolt-net`, NetworkManager, discovery |
@@ -143,7 +140,8 @@ cabledeskctl repair-network  # recreate the NetworkManager profile/firewalld
 | [docs/UPSTREAM_INTEGRATION.md](docs/UPSTREAM_INTEGRATION.md) | Sunshine / Moonlight integration |
 | [docs/PACKAGING.md](docs/PACKAGING.md) | RPM packaging and hardening |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phased plan |
-| [docs/OPEN_QUESTIONS.md](docs/OPEN_QUESTIONS.md) | Unresolved upstream questions |
+| [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md) | Audited phase status |
+| [docs/HARDWARE_TEST_PLAN.md](docs/HARDWARE_TEST_PLAN.md) | Deferred physical tests |
 | [docs/adr/](docs/adr/) | Architecture decision records |
 | [data/brand/README.md](data/brand/README.md) | Lockup, mark, palette |
 

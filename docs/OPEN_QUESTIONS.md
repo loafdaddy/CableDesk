@@ -220,17 +220,18 @@ page is the index, not a duplicate.
     GTK UI, per item 25's cross-reference), this should move to a shared
     location (perhaps `cabledesk-core` or a new thin crate) rather than
     being copy-pasted.
-32. **CableDesk's own reserved Polkit actions
-    (`org.cabledesk.helper.prepare-direct-link`,
-    `org.cabledesk.helper.install-firewall-policy`) are not wired up or
-    enforced anywhere.** `cabledeskctl repair-network` calls
-    `prepare_direct_link`/`install_firewall_policy` directly as the
-    logged-in user, not through `cabledesk-helper`, so authorization for
-    these mutating operations currently comes entirely from
-    NetworkManager's and firewalld's own Polkit policies, not
-    CableDesk's — see `docs/SECURITY.md`, "An architectural gap this
-    milestone surfaced." *Needs a decision*: either route these calls
-    through `cabledesk-helper` with a real `CheckAuthorization` call
-    before Phase 3, or explicitly retire these two reserved actions as
-    redundant with NM's/firewalld's own gating — but decide deliberately,
-    don't leave it implicit.
+32. **CableDesk's Polkit action `org.cabledesk.helper.prepare-direct-link`
+    is now wired:** `cabledesk-helper` `PrepareDirectLink` calls
+    `CheckAuthorization` then `FedoraBackend::prepare_direct_link`.
+    `cabledeskctl repair-network` and the agent use the helper (not an
+    in-process prepare). Remaining reserved actions
+    (`load-thunderbolt-module`, `install-firewall-policy`,
+    `repair-network-profile`) are still unused — either implement or
+    retire deliberately before release.
+
+33. **Agent now calls Avahi + `validate_cable_peer` on the live hotplug
+    path** (stops at `PairingRequired`). Still unverified on real
+    Thunderbolt hardware (see `docs/HARDWARE_TEST_PLAN.md`).
+
+34. **Graphify full-corpus incremental update requires an LLM API key**
+    when docs/images changed. Code-only update works without a key.

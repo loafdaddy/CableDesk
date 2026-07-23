@@ -1,22 +1,21 @@
-//! `cabledesk-helper` — the privileged system service
-//! (`cabledesk-helper.service`) described in docs/ARCHITECTURE.md and
-//! data/dbus-1/interfaces/org.cabledesk.Helper1.xml.
+//! `cabledesk-helper` — privileged system service (Polkit-gated).
 //!
-//! Every privileged operation this service will eventually perform (loading
-//! `thunderbolt-net`, creating the NetworkManager profile, installing
-//! firewalld rules) MUST be authorised per-call via Polkit — see
-//! data/polkit-1/actions and docs/SECURITY.md. This milestone only exposes
-//! a narrow, unauthenticated `Ping`/`Version` surface plus a read-only
-//! diagnostics call; it performs no privileged actions yet, so no Polkit
-//! check is wired up for it. Do not add a privileged method here without
-//! also adding its `CheckAuthorization` call — see docs/OPEN_QUESTIONS.md.
+//! Mutating methods (`PrepareDirectLink`) perform a per-call
+//! `CheckAuthorization` against `data/polkit-1/actions` before acting.
+//! Read-only methods (`Ping`, `Version`, `CollectDiagnosticsJson`) stay
+//! unauthenticated.
 
-use cabledesk_platform::PlatformBackend;
+mod polkit;
+
+use cabledesk_network::require_direct_cable_interface;
+use cabledesk_platform::{DirectLink, PlatformBackend};
 use cabledesk_platform_fedora::FedoraBackend;
+use zbus::message::Header;
 use zbus::{connection, interface};
 
 const SERVICE_NAME: &str = "org.cabledesk.Helper1";
 const OBJECT_PATH: &str = "/org/cabledesk/Helper";
+const ACTION_PREPARE_DIRECT_LINK: &str = "org.cabledesk.helper.prepare-direct-link";
 
 struct Helper;
 
@@ -31,9 +30,8 @@ impl Helper {
         "pong".to_string()
     }
 
-    /// Read-only diagnostics as a JSON string. Every field returned here is
-    /// already sanitised by `cabledesk-platform-fedora` (see
-    /// docs/SECURITY.md, "Never include").
+    /// Read-only diagnostics as a JSON string. Already sanitised by the
+    /// Fedora backend (see docs/SECURITY.md, "Never include").
     async fn collect_diagnostics_json(&self) -> String {
         let backend = FedoraBackend::new();
         match backend.collect_diagnostics().await {
@@ -45,6 +43,40 @@ impl Helper {
                 "{}".to_string()
             }
         }
+    }
+
+    /// Create/repair the CableDesk NetworkManager profile and bind the
+    /// interface into the CableDesk firewalld zone. Cable-only: rejects
+    /// Wi-Fi / ordinary Ethernet / unknown interfaces before mutating.
+    async fn prepare_direct_link(
+        &self,
+        interface_name: String,
+        #[zbus(header)] header: Header<'_>,
+    ) -> zbus::fdo::Result<()> {
+        let conn = zbus::Connection::system()
+            .await
+            .map_err(|e| zbus::fdo::Error::Failed(format!("system bus: {e}")))?;
+
+        polkit::check_authorization(&conn, &header, ACTION_PREPARE_DIRECT_LINK).await?;
+
+        if let Err(e) = require_direct_cable_interface(&interface_name) {
+            tracing::warn!("PrepareDirectLink rejected non-direct interface {interface_name}: {e}");
+            return Err(zbus::fdo::Error::InvalidArgs(format!(
+                "interface `{interface_name}` is not a direct USB4/Thunderbolt link"
+            )));
+        }
+
+        let backend = FedoraBackend::new();
+        let link = DirectLink {
+            interface_name: interface_name.clone(),
+        };
+        backend.prepare_direct_link(&link).await.map_err(|e| {
+            tracing::error!("prepare_direct_link({interface_name}) failed: {e}");
+            zbus::fdo::Error::Failed(e.to_string())
+        })?;
+
+        tracing::info!("prepared direct-link profile for {interface_name}");
+        Ok(())
     }
 }
 
@@ -76,9 +108,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await?;
 
     tracing::info!("cabledesk-helper ready on {SERVICE_NAME} ({OBJECT_PATH})");
-
-    // Skeleton only: no kernel module loading, NetworkManager profile
-    // management or firewalld policy installation yet.
     std::future::pending::<()>().await;
     Ok(())
 }

@@ -7,40 +7,32 @@
   /org/cabledesk/Helper. Version 1; incompatible changes ship as
   org.cabledesk.Helper2 rather than break this one.
 
-  Every method that will eventually mutate system state (loading a kernel
-  module, creating the NetworkManager profile, installing firewalld rules)
-  MUST perform a per-call org.freedesktop.PolicyKit1.Authority
-  CheckAuthorization against an action ID in data/polkit-1/actions before
-  doing anything — see docs/SECURITY.md. This milestone implements no
-  privileged actions at all, only Version/Ping/CollectDiagnosticsJson, so no
-  Polkit check is wired up yet.
+  Mutating methods MUST CheckAuthorization against data/polkit-1/actions
+  before doing anything — see docs/SECURITY.md.
 -->
 <node name="/org/cabledesk/Helper">
   <interface name="org.cabledesk.Helper1">
-    <!-- Helper build version, e.g. "0.1.0". -->
     <property name="Version" type="s" access="read"/>
 
-    <!-- Trivial liveness check; always returns "pong". -->
     <method name="Ping">
       <arg name="reply" type="s" direction="out"/>
     </method>
 
-    <!-- Read-only sanitised diagnostics bundle (cabledesk_platform::PlatformDiagnostics)
-         serialised as JSON. Never includes secrets — see docs/SECURITY.md, "Never include". -->
     <method name="CollectDiagnosticsJson">
       <arg name="diagnostics_json" type="s" direction="out"/>
     </method>
 
+    <!-- Polkit: org.cabledesk.helper.prepare-direct-link.
+         Rejects non-direct (Wi-Fi/Ethernet) interface names. -->
+    <method name="PrepareDirectLink">
+      <arg name="interface_name" type="s" direction="in"/>
+    </method>
+
     <!--
-    Planned for later phases — not implemented yet. Each of these requires
-    a corresponding Polkit action in data/polkit-1/actions:
+    Planned for later phases:
 
     <method name="LoadThunderboltNetModule">
       <arg name="ok" type="b" direction="out"/>
-    </method>
-
-    <method name="PrepareDirectLink">
-      <arg name="interface_name" type="s" direction="in"/>
     </method>
 
     <method name="InstallFirewallPolicy"/>

@@ -3,30 +3,24 @@
   org.cabledesk.Agent1 — the CableDesk user-session agent interface.
 
   Owned by cabledesk-agent (a systemd user-session service) on the session bus at
-  object path /org/cabledesk/Agent. This is version 1 of the interface: any
-  incompatible change must ship as org.cabledesk.Agent2 rather than break
-  this one, so older UI/CLI builds fail predictably instead of silently
-  misinterpreting a changed method.
-
-  This milestone only implements Version and GetState. Everything else
-  below is the interface CableDesk is being built toward (see
-  docs/ROADMAP.md); unimplemented methods are commented out rather than
-  declared and left to error, so introspection never advertises a call
-  that does not exist yet.
+  object path /org/cabledesk/Agent. Version 1: incompatible changes ship as
+  org.cabledesk.Agent2.
 -->
 <node name="/org/cabledesk/Agent">
   <interface name="org.cabledesk.Agent1">
-    <!-- Agent build version, e.g. "0.1.0". -->
     <property name="Version" type="s" access="read"/>
 
-    <!-- Current cabledesk_core::state::ConnectionState, as its Debug name
-         (e.g. "Unconfigured", "WaitingForCable", "Streaming"). -->
     <method name="GetState">
       <arg name="state" type="s" direction="out"/>
     </method>
 
+    <!-- Sanitised session snapshot for CLI/UI testing (JSON object). -->
+    <method name="GetSessionJson">
+      <arg name="session_json" type="s" direction="out"/>
+    </method>
+
     <!--
-    Planned for later phases — not implemented yet:
+    Planned for later phases:
 
     <method name="ListTrustedDevices">
       <arg name="devices_json" type="s" direction="out"/>

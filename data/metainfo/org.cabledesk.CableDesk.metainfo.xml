@@ -22,9 +22,9 @@
 
   <launchable type="desktop-id">org.cabledesk.CableDesk.desktop</launchable>
 
-  <url type="homepage">https://github.com/cabledesk/cabledesk</url>
-  <url type="bugtracker">https://github.com/cabledesk/cabledesk/issues</url>
-  <url type="vcs-browser">https://github.com/cabledesk/cabledesk</url>
+  <url type="homepage">https://github.com/loafdaddy/CableDesk</url>
+  <url type="bugtracker">https://github.com/loafdaddy/CableDesk/issues</url>
+  <url type="vcs-browser">https://github.com/loafdaddy/CableDesk</url>
 
   <content_rating type="oars-1.1"/>
 

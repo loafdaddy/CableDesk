@@ -106,22 +106,13 @@ execution, arbitrary file writes, capability misuse.
 
 **Mitigation:** `cabledesk-helper`'s D-Bus interface (see
 `data/dbus-1/interfaces/org.cabledesk.Helper1.xml`) is narrow and typed —
-no method accepts a shell command or an arbitrary file path. Every future
-privileged method must perform its own
-`org.freedesktop.PolicyKit1.Authority.CheckAuthorization` call (action IDs
-already reserved in `data/polkit-1/actions/org.cabledesk.Helper1.policy`)
-before doing anything. **`cabledesk-helper`'s own D-Bus surface still
-implements no privileged actions at all** — it exposes only `Version`,
-`Ping`, `CollectDiagnosticsJson`. The real mutating operations that exist
-as of Phase 2 (`prepare_direct_link`, `install_firewall_policy`) are
-called directly by `cabledeskctl repair-network` running as the
-logged-in user, bypassing `cabledesk-helper` and its reserved Polkit
-actions entirely — this only stays safe today because NetworkManager and
-firewalld each enforce their own authorization for the calling user
-independently of CableDesk. See `docs/SECURITY.md`, "An architectural gap
-this milestone surfaced," and `docs/OPEN_QUESTIONS.md` item 32 — this is
-the first thing to resolve properly before Phase 3, not a closed
-question.
+no method accepts a shell command or an arbitrary file path.
+`PrepareDirectLink` takes only an interface name string, runs Polkit
+`CheckAuthorization` for `org.cabledesk.helper.prepare-direct-link`, then
+rejects non-direct (Wi-Fi/Ethernet/unknown) interfaces via
+`require_direct_cable_interface` before mutating NM/firewalld. Remaining
+reserved actions are still unimplemented — see `docs/OPEN_QUESTIONS.md`
+§32.
 
 ### T6 — Secrets leaking via logs, process arguments, or diagnostics
 
@@ -158,9 +149,9 @@ a context where stolen-device risk is higher.
 |---|---|---|
 | T1 | Physical cable ≠ trust | Designed for, not implemented |
 | T2 | Spoofed peer identity | Designed for (error type exists), not implemented |
-| T3 | Silent Wi-Fi fallback | Validation primitives implemented and tested live; not yet wired into a stream (none exists) or verified on real hardware |
+| T3 | Silent Wi-Fi fallback | Classification + peer policy + agent Avahi path + simulation reject Wi-Fi/Ethernet; cable loss → `WaitingForCable`; not verified on TB hardware |
 | T4 | mDNS as auth | Avoided by design (mDNS carries no secrets) |
-| T5 | Helper input validation | Interface is narrow/typed; real mutating ops exist but bypass the helper and its reserved Polkit actions entirely (open gap, item 32) |
+| T5 | Helper input validation | `PrepareDirectLink` Polkit-gated + direct-iface reject; other actions still reserved/unused |
 | T6 | Secret leakage via logs/diagnostics | Enforced today for the error/diagnostics paths that exist |
 | T7 | Compromised trusted peer | Accepted limitation (manual `Forget`, no revocation broadcast) |
 
