@@ -13,7 +13,7 @@
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPL--3.0--or--later-E8A45C" alt="GPL-3.0-or-later"/></a>
   <a href="https://www.rust-lang.org/"><img src="https://img.shields.io/badge/Rust-1.82+-000000?logo=rust&logoColor=white" alt="Rust"/></a>
   <a href="https://www.gtk.org/"><img src="https://img.shields.io/badge/GTK-4-7C3AED?logo=gtk&logoColor=white" alt="GTK4"/></a>
-  <a href="docs/ROADMAP.md"><img src="https://img.shields.io/badge/status-Phase%202%20networking-2A1C10" alt="Phase 2 networking"/></a>
+  <a href="docs/ROADMAP.md"><img src="https://img.shields.io/badge/status-development%20paused-6B7280" alt="Development paused"/></a>
 </p>
 
 <p align="center">
@@ -30,13 +30,14 @@
   <a href="data/brand/README.md">Brand</a>
 </p>
 
-> **Experimental — not ready for daily use.**
-> Compatibility detection and the direct-link networking/discovery stack
-> (NetworkManager profile, hotplug, Avahi, peer validation, Polkit prepare)
-> are implemented and unit/simulation-tested, but **have never been
-> exercised against real Thunderbolt/USB4 hardware or a second machine**.
-> Pairing and desktop streaming are **not implemented**. See
-> [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md) and
+> **Development paused — not ready for daily use.**
+> Further work is deferred until Thunderbolt 4 hardware is available for
+> physical two-machine testing. Compatibility detection and the direct-link
+> networking/discovery stack (NetworkManager profile, hotplug, Avahi, peer
+> validation, Polkit prepare) are implemented and unit/simulation-tested, but
+> **have never been exercised against real Thunderbolt/USB4 hardware or a
+> second machine**. Pairing and desktop streaming are **not implemented**.
+> See [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md) and
 > [docs/ROADMAP.md](docs/ROADMAP.md).
 
 CableDesk connects two Linux computers over a direct USB4 or Thunderbolt
@@ -63,6 +64,9 @@ Wayland-first, Polkit/SELinux-aware, no Electron.
 > compatible instead of assuming it from the connector shape.
 
 ## Current status (Phase 2 of 7)
+
+**Paused.** Development is on hold until Thunderbolt 4 hardware is available;
+that cable link is required for further testing beyond simulation.
 
 Authoritative board: [docs/CURRENT_STATUS.md](docs/CURRENT_STATUS.md) ·
 [docs/ROADMAP.md](docs/ROADMAP.md).

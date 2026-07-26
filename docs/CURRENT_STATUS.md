@@ -1,6 +1,6 @@
 # CableDesk — Current Status
 
-**Updated:** 2026-07-23  
+**Updated:** 2026-07-26  
 **Branch:** `main` (merged from `feature/phase2-agent-discovery-wiring`)  
 **Graphify:** 636 nodes · 1039 edges (code-only refresh 2026-07-23)
 
@@ -8,11 +8,12 @@
 
 | | |
 |--|--|
+| **Project status** | ⏸ **Paused** — no Thunderbolt 4 hardware for further testing |
 | **Current phase** | Phase 2 — Automated networking |
 | **Last completed (software)** | Phase 2 cable-only orchestration slice |
 | **Phase 2 hardware success** | ❌ Not met (no physical USB4/TB two-machine test) |
-| **Next feature phase** | Phase 3 — Secure pairing |
-| **Next ops step** | Smoke-test agent/helper/UI install; then pairing |
+| **Next feature phase** | Phase 3 — Secure pairing (blocked on TB4 hardware) |
+| **Next ops step** | Obtain TB4-capable machines/cable; run `HARDWARE_TEST_PLAN.md` |
 
 ## Phase board
 
